@@ -1,0 +1,16 @@
+name = ecc_write
+config_file = example_config_scn3me_subm.py
+
+run:
+		./openram_t.py -v -n -o $(name) -p ./design_dir/$(name) $(config_file)
+		glade design_dir/$(name)/$(name).gds
+
+run_noglade:
+		./openram_t.py -v -n -o $(name) -p ./design_dir/$(name) $(config_file)
+
+run_real:
+		./openram.py -v -n -o $(name) -p ./design_dir/$(name) $(config_file)
+		glade design_dir/$(name)/$(name).gds
+
+clean:
+		rm *.pyc

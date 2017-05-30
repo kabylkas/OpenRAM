@@ -1,4 +1,4 @@
-word_size = 1
+word_size = 3
 num_words = 16
 num_banks = 1
 
@@ -21,3 +21,5 @@ wordline_driver = "wordline_driver"
 replica_bitcell = "replica_bitcell"
 bitcell = "bitcell"
 delay_chain = "logic_effort_dc"
+xor_2 = "xor_2"
+ecc_write = "ecc_write"

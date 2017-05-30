@@ -8,7 +8,9 @@ import sys, os
 sys.path.append(os.path.join(sys.path[0],"router"))
 import router
 from nand_2 import nand_2
-class ecc_write(design.design):
+from nand_3 import nand_3
+from pinv import pinv
+class ecc(design.design):
     """
     Error correction code Write module. Generates parity bits based on Hamming Code
     Single Error Correction Double Error Detection algorithm. Dynamically creates
@@ -16,7 +18,7 @@ class ecc_write(design.design):
     """
 
     def __init__(self, word_size):
-        design.design.__init__(self, "ecc_write")
+        design.design.__init__(self, "ecc")
         debug.info(1, "Creating {0}".format(self.name))
 
         c = reload(__import__(OPTS.config.xor_2))
@@ -26,7 +28,7 @@ class ecc_write(design.design):
         self.word_size = word_size
         self.parity_num = int(math.floor(math.log(word_size,2)))+2;
 
-        self.add_pins()
+        #self.add_pins()
         self.create_layout()
         #self.DRC_LVS()
 
@@ -50,8 +52,10 @@ class ecc_write(design.design):
         #self.route_parity_generator()
         #self.add_syndrome_generator()
         #self.route_syndrom_generator()
-        self.create_nand_2()
-        self.add_decoder()
+        #self.create_nand_2()
+        #self.create_nand_3()
+        #self.create_pinv()
+        #self.add_decoder()
 
     def create_xor_2(self):
         self.xor_2 = self.mod_xor_2("xor_2")
@@ -61,6 +65,18 @@ class ecc_write(design.design):
         self.nand_2 = nand_2(name="pnand2",
                              nmos_width=4,
                              height=self.xor_2.height)
+        self.add_mod(self.nand_2)
+
+    def create_nand_3(self):
+        self.nand_3 = nand_3(name="pnand3",
+                             nmos_width=4,
+                             height=self.xor_2.height)
+        self.add_mod(self.nand_2)
+
+    def create_pinv(self):
+        self.inv = pinv(name="pinv",
+                    nmos_width=4,
+                    height=self.xor_2.height)
         self.add_mod(self.nand_2)
 
     def setup_layout_constants(self):
@@ -222,6 +238,20 @@ class ecc_write(design.design):
         print "Done add route"
 
     def add_decoder(self):
-        self.add_inst(name="nand",
-                 mod=self.nand_2,
-                 offset=vector(self.xor_2.height*9, 0))
+        decoder_offset = vector(self.xor_2.width*6, 0)
+        
+        #place inverters
+        for parity_i in range(self.parity_num):
+            if parity_i%2:
+                direction = "R0"
+                xoffset = 0
+                yoffset = parity_i*(self.inv.height)
+            else:
+                direction = "MX"
+                xoffset = 0
+                yoffset = (parity_i+1)*(self.inv.height)
+
+            self.add_inst(name="inv",
+                     mod=self.inv,
+                     offset=decoder_offset+vector(xoffset, yoffset),
+                     mirror=direction)

@@ -67,14 +67,14 @@ print "Word size: {0}\nWords: {1}\nBanks: {2}".format(word_size,num_words,num_ba
 # only start importing modules after we have the config file
 print OPTS.tech_name
 import calibre
-import ecc_write
+import ecc
 
 print "Start: ", datetime.datetime.now()
 
 # import a module
 #module = sense_amp_array.sense_amp_array(word_size=8,
 #                                      words_per_row=1)
-module = ecc_write.ecc_write(word_size=16)
+module = ecc.ecc(word_size=16)
 module_name = "ecc_write"
 # Output the files for the resulting module
 """

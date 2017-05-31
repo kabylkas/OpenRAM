@@ -133,8 +133,6 @@ class ecc(design.design):
                 a_flip_offset = vector(0,0)
                 b_flip_offset = vector(0,0)
                 out_flip_offset = vector(0,0)
-                gnd_flip_offset = vector(self.xor_2_chars["gnd"][0], self.xor_2_chars["gnd"][1])
-                gnd_or_vdd = "gnd"
                 if direction == "MX":
                     xor_2_h = self.xor_2.height
                     ab_y_distance = self.xor_2_chars["a"][1]-self.xor_2_chars["b"][1]
@@ -147,8 +145,6 @@ class ecc(design.design):
                     #out
                     out_y = xor_2_h-(xor_2_h-2*self.xor_2_chars["out"][1])
                     out_flip_offset = vector(0, out_y)
-                    #gnd
-                    gnd_or_vdd = "vdd"
 
                 xor_2_position = vector(self.xor_2.width * xoffset, yoffset)
                 a_offset = xor_2_position+\
@@ -160,8 +156,6 @@ class ecc(design.design):
                 out_offset = xor_2_position+\
                              vector(self.xor_2_chars["out"][0], self.xor_2_chars["out"][1])-\
                              out_flip_offset
-                gnd_offset = xor_2_position+\
-                             gnd_flip_offset
 
                 #add current xor2 to the design
                 self.add_inst(name = name, 
@@ -181,9 +175,6 @@ class ecc(design.design):
                 self.add_label(text = "out_{0}_{1}".format(parity_i, i),
                                layer = "metal2",
                                offset = out_offset)
-                self.add_label(text = gnd_or_vdd,
-                               layer = "metal1",
-                               offset = gnd_offset)
 
                 self.add_pin("a_{0}_{1}".format(parity_i, i))
                 self.add_pin("b_{0}_{1}".format(parity_i, i))
@@ -194,7 +185,20 @@ class ecc(design.design):
                                    "out_{0}_{1}".format(parity_i, i),
                                    "vdd",
                                    "gnd"])
-                self.gds_write(OPTS.openram_temp+"xor2s.gds")
+
+            #add vdd and gnd labels
+            for i in range(2*self.parity_num+1):
+                pin_name = "gnd"
+                if i%2:
+                    pin_name = "vdd"
+                
+                label_offset = vector(0, i*(self.xor_2.height-self.xor_2.rails_height)+self.xor_2.rails_height/2)
+                self.add_label(text = pin_name,
+                               layer = "metal1",
+                               offset = label_offset)
+  
+
+            self.gds_write(OPTS.openram_temp+"xor2s.gds")
 
             #generate connections between xor gates in the upper row 
             dst = 0

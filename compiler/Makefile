@@ -2,7 +2,10 @@ name = ecc
 config_file = example_config_scn3me_subm.py
 
 run:
-		python ./tests/31_ecc_test.py -v -t scn3me_subm 
+		python ./tests/31_ecc_test.py -v -t scn3me_subm
+ 
+run_ex:
+		python ./tests/19_bank_test.py -v -t scn3me_subm 
 
 run_noglade:
 		./openram_t.py -v -n -o $(name) -p ./design_dir/$(name) $(config_file)

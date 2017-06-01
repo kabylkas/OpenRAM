@@ -50,7 +50,7 @@ class ecc(design.design):
         self.create_xor_2()
         self.setup_layout_constants()
         self.add_parity_generator()
-        #self.route_parity_generator()
+        self.route_parity_generator()
         #self.add_syndrome_generator()
         #self.route_syndrom_generator()
         #self.create_nand_2()

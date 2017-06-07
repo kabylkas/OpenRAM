@@ -14,4 +14,3 @@ class xor_2(design.design):
 
         self.width = xor_2.chars["width"]
         self.height = xor_2.chars["height"]
-        self.rails_height = 1.8

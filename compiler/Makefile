@@ -22,3 +22,4 @@ run_real:
 
 clean:
 		rm *.pyc
+		rm *.gds

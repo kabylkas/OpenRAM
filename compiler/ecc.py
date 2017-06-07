@@ -61,6 +61,7 @@ class ecc(design.design):
     def create_xor_2(self):
         self.xor_2 = self.mod_xor_2("xor_2")
         self.add_mod(self.xor_2)
+        print self.xor_2.height
 
     def create_nand_2(self):
         self.nand_2 = nand_2(name="pnand2",
@@ -188,7 +189,7 @@ class ecc(design.design):
                 if i%2:
                     pin_name = "vdd"
                 
-                label_offset = vector(0, i*(self.xor_2.height-self.xor_2.rails_height)+self.xor_2.rails_height/2)
+                label_offset = vector(0, i*self.xor_2.height)
                 self.add_label(text = pin_name,
                                layer = "metal1",
                                offset = label_offset)

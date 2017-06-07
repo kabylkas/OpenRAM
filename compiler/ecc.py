@@ -120,11 +120,11 @@ class ecc(design.design):
                 if i<gate_num_half:
                     direction = "R0"
                     xoffset = i
-                    yoffset = 2*parity_i*(self.xor_2.height)-(2*parity_i*self.xor_2.rails_height)
+                    yoffset = 2*parity_i*(self.xor_2.height)
                 else:
                     direction = "MX"
                     xoffset = i-int(math.floor(gate_num/2))
-                    yoffset = (2*parity_i+2)*(self.xor_2.height)-((2*parity_i+1)*self.xor_2.rails_height)
+                    yoffset = (2*parity_i+2)*(self.xor_2.height)
 
                 a_flip_offset = vector(0,0)
                 b_flip_offset = vector(0,0)
@@ -243,7 +243,7 @@ class ecc(design.design):
         layer_stack =("metal3", "via2", "metal2")
         for connection in self.xor_2_connections:
             r.route(self, layer_stack,src=connection[0], dest=connection[1])
-            r.add_route(self)
+            #a = r.add_route(self)
         debug.info(1, "Done routing")
 
     def add_decoder(self):

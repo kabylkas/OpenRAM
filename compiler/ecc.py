@@ -26,7 +26,7 @@ class ecc(design.design):
         self.xor_2_chars = self.mod_xor_2.chars
 
         self.word_size = word_size
-        self.parity_num = int(math.floor(math.log(word_size,2)))+2;
+        self.parity_num = int(math.floor(math.log(word_size,2)))+1;
 
         self.add_pins()
         self.create_layout()
@@ -111,10 +111,6 @@ class ecc(design.design):
 
             #subtract 1 from the calculated input number
             input_num = input_num - 1
-
-            #last parity xors all bits and previosly generated parities
-            if parity_i == self.parity_num-1:
-                input_num = total_bit_num
 
             #xor2 gate number is equal two input number - 1
             gate_num = input_num-1
@@ -246,7 +242,7 @@ class ecc(design.design):
         r = router.router(OPTS.openram_temp+"xor2s.gds")
         layer_stack =("metal3", "via2", "metal2")
         for connection in self.xor_2_connections:
-            r.route(layer_stack,src=connection[0], dest=connection[1])
+            r.route(self, layer_stack,src=connection[0], dest=connection[1])
             r.add_route(self)
         debug.info(1, "Done routing")
 

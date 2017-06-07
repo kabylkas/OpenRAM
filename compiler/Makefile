@@ -7,6 +7,9 @@ run:
 run_ex:
 		python ./tests/19_bank_test.py -v -t scn3me_subm 
 
+run_bank2:
+		python ./tests/20_sram_2bank_t.py -v -t scn3me_subm 
+
 run_noglade:
 		./openram_t.py -v -n -o $(name) -p ./design_dir/$(name) $(config_file)
 

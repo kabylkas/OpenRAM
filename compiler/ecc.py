@@ -50,32 +50,23 @@ class ecc(design.design):
     def create_layout(self):
         self.create_xor_2()
         self.create_pinv()
+        self.create_nand_2()
         self.setup_layout_constants()
         self.add_parity_generator()
         #self.route_parity_generator()
         self.add_syndrome_generator()
+        #self.route_syndrom_generator()
         self.add_syndrome_to_locator_bus()
         self.route_syndrome_to_bus()
-        #self.route_syndrom_generator()
-        #self.create_nand_2()
-        #self.create_nand_3()
+        self.add_locator()
         #self.create_pinv()
-        #self.add_decoder()
 
     def create_xor_2(self):
         self.xor_2 = self.mod_xor_2("xor_2")
         self.add_mod(self.xor_2)
 
     def create_nand_2(self):
-        self.nand_2 = nand_2(name="pnand2",
-                             nmos_width=4,
-                             height=self.xor_2.height)
-        self.add_mod(self.nand_2)
-
-    def create_nand_3(self):
-        self.nand_3 = nand_3(name="pnand3",
-                             nmos_width=4,
-                             height=self.xor_2.height)
+        self.nand_2 = nand_2(nmos_width = 2*drc["minwidth_tx"])
         self.add_mod(self.nand_2)
 
     def create_pinv(self):
@@ -87,9 +78,14 @@ class ecc(design.design):
     def setup_layout_constants(self):
         #layout offsets
         self.syndrome_gen_height = self.xor_2.height
-        self.metal1_stack_height = 60
+        self.syn_to_loc_bus_height = 2*self.parity_num*\
+                                     (drc["minwidth_metal1"]+drc["metal1_to_metal1"]+1)+\
+                                     drc["metal1_to_metal1"]+1
+        self.locator_height = 2*drc["metal1_to_metal1"]+\
+                              2*getattr(self.nand_2, "height")
         self.global_yoffset = self.syndrome_gen_height+\
-                              self.metal1_stack_height
+                              self.syn_to_loc_bus_height+\
+                              self.locator_height
         self.current_global_yoffset = self.global_yoffset
 
         #module widths
@@ -434,6 +430,8 @@ class ecc(design.design):
                        offset = vdd_offset)
         #update global_y offset
         self.current_global_yoffset -= self.syndrome_gen_height
+
+        #finish
         debug.info(1, "Done syndrom layout")
         
     def add_syndrome_to_locator_bus(self):
@@ -450,6 +448,11 @@ class ecc(design.design):
                           height  = m1min)
 
             self.syn_to_loc_bus_lines.append(global_yoffset)
+        
+        #update global_yoffset
+        self.current_global_yoffset -= self.syn_to_loc_bus_height
+
+        #finish
         debug.info(1, "Done syndrome to locator bus layout")
 
     def route_syndrome_to_bus(self):
@@ -484,24 +487,90 @@ class ecc(design.design):
             i += 2
         debug.info(1, "Done syndrome to locator bus route")
         
-
-    def add_decoder(self):
-        debug.info(1, "Starting to layout decoder logic gates")
-        decoder_offset = vector(self.xor_2.width*6, 0)
+    """
+    Locator is the module that locates the bit flip. Locator is made of NAND gates
+    """
+    def add_locator(self):
+        debug.info(1, "Starting to layout locator logic gates")
+        global_yoffset = self.current_global_yoffset
+        global_yoffset -= (1.5*drc["metal1_to_metal1"]+getattr(self.nand_2, "height"))
+        #place NAND gates
+        gate_num = self.parity_num-1
+        gate_num_half = int(gate_num/2)
+        if gate_num%2:
+            gate_num_half = int(gate_num/2)+1
+        global_xoffset=0
+        nand_2_width = getattr(self.pinv, "width")
+        nand_2_height = getattr(self.pinv, "height")
+        for i in range(self.word_size):
+            for j in range(gate_num):
+                name = "locator_nand_{0}_{1}".format(i,j)
+                xoffset = 0
+                flip = 0
+                if j<gate_num_half:
+                    xoffset = j*nand_2_width
+                    direction = "R0"
+                else:
+                    xoffset = (j-gate_num_half)*nand_2_width
+                    direction = "MX"
+                    flip = 1
+                xoffset += global_xoffset
+                nand_2_position = vector(xoffset, global_yoffset)
+                #add current xor2 to the design
+                self.add_inst(name = name, 
+                              mod = self.nand_2,
+                              offset = nand_2_position,
+                              mirror = direction)
         
-        #place inverters
-        for parity_i in range(self.parity_num):
-            if parity_i%2:
-                direction = "R0"
-                xoffset = 0
-                yoffset = parity_i*(self.inv.height)
-            else:
-                direction = "MX"
-                xoffset = 0
-                yoffset = (parity_i+1)*(self.inv.height)
+                #calculate input and output offsets
+                nand_2_a_position = getattr(self.nand_2, "A_position")
+                nand_2_b_position = getattr(self.nand_2, "B_position")
+                nand_2_z_position = getattr(self.nand_2, "Z_position")
+      
+                nand_2_a_offset = nand_2_position+\
+                                  vector(nand_2_a_position[0], nand_2_a_position[1])-\
+                                  vector(0, flip*(nand_2_height-(nand_2_height-2*nand_2_a_position[1])))
+                nand_2_b_offset = nand_2_position+\
+                                  vector(nand_2_b_position[0], nand_2_b_position[1])-\
+                                  vector(0, flip*(nand_2_height-(nand_2_height-2*nand_2_b_position[1])))
+                nand_2_z_offset = nand_2_position+\
+                                  vector(nand_2_z_position[0], nand_2_z_position[1])-\
+                                  vector(0, flip*(nand_2_height-(nand_2_height-2*nand_2_z_position[1])))
 
-            self.add_inst(name="inv",
-                     mod=self.inv,
-                     offset=decoder_offset+vector(xoffset, yoffset),
-                     mirror=direction)
+                """
+                #add metal2 rect to bring the pin up
+                self.add_rect(layer   = "metal2",
+                              offset  = pinv_output_offset-vector(2,2),
+                              width   = 4,
+                              height  = 4)
+
+
+                self.add_rect(layer   = "metal2",
+                              offset  = pinv_input_offset-vector(0,3),
+                              width   = 2,
+                              height  = 4)
+                """
+
+                #add labels/pins/connect
+                self.add_label(text = "nand2_a_{0}_{1}".format(i,j),
+                               layer = "metal1",
+                               offset = nand_2_a_offset)
+                self.add_label(text = "nand2_b_{0}_{1}".format(i,j),
+                               layer = "metal1",
+                               offset = nand_2_b_offset)
+                self.add_label(text = "nand2_z_{0}_{1}".format(i,j),
+                               layer = "metal1",
+                               offset = nand_2_z_offset)
+
+                self.add_pin("nand_2_a_{0}_{1}".format(i,j))
+                self.add_pin("nand_2_b_{0}_{1}".format(i,j))
+                self.add_pin("nand_2_z_{0}_{1}".format(i,j))
+                self.connect_inst(["nand_2_a_{0}_{1}".format(i,j),
+                                   "nand_2_b_{0}_{1}".format(i,j),
+                                   "nand_2_z_{0}_{1}".format(i,j),
+                                   "vdd",
+                                   "gnd"])
+
+            global_xoffset+=gate_num_half*nand_2_width
+        debug.info(1, "Done locator logic gates layout")
     

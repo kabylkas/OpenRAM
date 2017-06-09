@@ -1,5 +1,6 @@
 import design
 import tech
+from tech import drc
 from vector import vector
 import debug
 from globals import OPTS
@@ -53,6 +54,8 @@ class ecc(design.design):
         self.add_parity_generator()
         #self.route_parity_generator()
         self.add_syndrome_generator()
+        self.add_syndrome_to_locator_bus()
+        self.route_syndrome_to_bus()
         #self.route_syndrom_generator()
         #self.create_nand_2()
         #self.create_nand_3()
@@ -76,12 +79,22 @@ class ecc(design.design):
         self.add_mod(self.nand_2)
 
     def create_pinv(self):
-        self.pinv = pinv(nmos_width=tech.drc["minwidth_tx"],
-                         height=self.xor_2.height,
+        self.pinv = pinv(nmos_width=2*drc["minwidth_tx"],
+                         height=self.xor_2.height-drc["minwidth_metal1"],
                          beta=tech.parameter["pinv_beta"])
         self.add_mod(self.pinv)
 
     def setup_layout_constants(self):
+        #layout offsets
+        self.syndrome_gen_height = self.xor_2.height
+        self.metal1_stack_height = 60
+        self.global_yoffset = self.syndrome_gen_height+\
+                              self.metal1_stack_height
+        self.current_global_yoffset = self.global_yoffset
+
+        #module widths
+        self.parity_gen_width = 0 #calculated after layout
+        #reset lists
         self.vdd_positions = []
         self.gnd_positions = []
         self.a_positions = []
@@ -90,6 +103,8 @@ class ecc(design.design):
         self.xor_2_positions = []
         self.xor_2_connections = []
         self.parity_positions = []
+        self.inv_positions = []
+        self.syn_to_loc_bus_lines = []
 
     def add_parity_generator(self):
         debug.info(1, "Laying out xor2 gates...")
@@ -98,8 +113,8 @@ class ecc(design.design):
 
         #generate xor2 gate set for each parity bit
         global_xoffset = 0
-        self.global_yoffset = self.xor_2.height
-        global_yoffset = self.global_yoffset
+        global_yoffset = self.current_global_yoffset
+
         for parity_i in range(self.parity_num):
             #calculate number of inputs for the current parity
             two_to_parity_i = int(math.pow(2, parity_i))
@@ -235,21 +250,25 @@ class ecc(design.design):
                         self.xor_2_connections.append(xor_2_connection)
                     
                 inc = 2*inc
-            
+        
+        #remember last global X offset
+        self.parity_gen_width = global_xoffset
+         
         #add vdd and gnd labels
-        for i in range(2*self.parity_num+1):
+        for i in range(3):
             pin_name = "gnd"
             if i%2:
                 pin_name = "vdd"
             
-            label_offset = vector(0, i*self.xor_2.height)
+            label_offset = vector(0,global_yoffset) + vector(0, i*self.xor_2.height)
             self.add_label(text = pin_name,
                            layer = "metal1",
                            offset = label_offset)
 
         #dump gds file for the router
         self.gds_write(OPTS.openram_temp+"xor2s.gds")
-
+        
+        #finish
         debug.info(1, "Done placing parity generator (xor_2 gates)...")
 
     def route_parity_generator(self):
@@ -269,13 +288,15 @@ class ecc(design.design):
     """
     def add_syndrome_generator(self):
         debug.info(1, "Starting placement of syndrome generator")
+        #get the yoffset
+        global_yoffset = self.current_global_yoffset
         i=0
         for x_syndrome_position in self.parity_positions:
             ################
             #place XOR gate
             ################
             name = "syndrome_xor2_{0}".format(i)
-            xor_2_position = vector(x_syndrome_position, self.global_yoffset)
+            xor_2_position = vector(x_syndrome_position, global_yoffset)
 
             a_flip_offset = vector(0,0)
             b_flip_offset = vector(0,0)
@@ -337,7 +358,7 @@ class ecc(design.design):
             ######################
 
             name = "syndrome_inv_{0}".format(i)
-            pinv_position = vector(x_syndrome_position+self.xor_2.width, self.global_yoffset)
+            pinv_position = vector(x_syndrome_position+self.xor_2.width, self.global_yoffset-drc["minwidth_metal1"]/2)
             #add current xor2 to the design
             self.add_inst(name = name, 
                           mod = self.pinv,
@@ -349,16 +370,30 @@ class ecc(design.design):
             pinv_output_position = getattr(self.pinv, "Z_position")
   
             pinv_input_offset = pinv_position+\
-                                vector(pinv_input_position[0], pinv_input_position[1])
+                                vector(pinv_input_position[0], pinv_input_position[1])-\
+                                vector(0, xor_2_h-(xor_2_h-2*pinv_input_position[1]))
             pinv_output_offset = pinv_position+\
-                                 vector(pinv_output_position[0], pinv_output_position[1])
+                                 vector(pinv_output_position[0], pinv_output_position[1])-\
+                                 vector(0,xor_2_h-(xor_2_h-2*pinv_output_position[1]))
+
+            #add metal2 rect to bring the pin up
+            self.add_rect(layer   = "metal2",
+                          offset  = pinv_output_offset-vector(2,2),
+                          width   = 4,
+                          height  = 4)
+
+
+            self.add_rect(layer   = "metal2",
+                          offset  = pinv_input_offset-vector(0,3),
+                          width   = 2,
+                          height  = 4)
 
             #add labels/pins/connect
             self.add_label(text = "inv_a_{0}".format(i),
-                           layer = "metal1",
+                           layer = "metal2",
                            offset = pinv_input_offset)
             self.add_label(text = "inv_z_{0}".format(i),
-                           layer = "metal1",
+                           layer = "metal2",
                            offset = pinv_output_offset)
             self.add_pin("inv_a_{0}".format(i))
             self.add_pin("inv_z_{0}".format(i))
@@ -367,8 +402,88 @@ class ecc(design.design):
                                "vdd",
                                "gnd"])
 
+            inv_in_out_pair = [pinv_input_offset-vector(0,1), pinv_output_offset-vector(0,1)]
+            self.add_via(layers   = ("metal1", "via1", "metal2"),
+                         offset   = inv_in_out_pair[0])
+            self.add_via(layers   = ("metal1", "via1", "metal2"),
+                         offset   = inv_in_out_pair[1])
+  
+            #save in and out pair for routing
+            self.inv_positions.append(inv_in_out_pair)
             #increase counter
             i = i + 1
+        ########################
+        #insert vdd and gnd rail
+        ########################
+        vdd_offset = vector(0,global_yoffset-self.xor_2.height-drc["minwidth_metal1"])
+        self.add_rect(layer   = "metal1",
+                      offset  = vdd_offset,
+                      width   = self.parity_gen_width,
+                      height  = 2*drc["minwidth_metal1"])
+        self.add_label(text   = "vdd",
+                       layer  = "metal1",
+                       offset = vdd_offset)
+
+        gnd_offset = vector(0,global_yoffset-drc["minwidth_metal1"])
+        self.add_rect(layer   = "metal1",
+                      offset  = gnd_offset,
+                      width   = self.parity_gen_width,
+                      height  = 2*drc["minwidth_metal1"])
+        self.add_label(text   = "gnd",
+                       layer  = "metal1",
+                       offset = vdd_offset)
+        #update global_y offset
+        self.current_global_yoffset -= self.syndrome_gen_height
+        debug.info(1, "Done syndrom layout")
+        
+    def add_syndrome_to_locator_bus(self):
+        debug.info(1, "Starting to layout syndrome to locator bus")
+        m2m = drc["metal1_to_metal1"]+1
+        m1min = drc["minwidth_metal1"]
+        global_yoffset = self.current_global_yoffset-m2m
+        for i in range(2*self.parity_num):
+            global_yoffset -= (m2m+m1min)
+            line_offset = vector(0, global_yoffset)
+            self.add_rect(layer   = "metal1",
+                          offset  = line_offset,
+                          width   = self.parity_gen_width,
+                          height  = m1min)
+
+            self.syn_to_loc_bus_lines.append(global_yoffset)
+        debug.info(1, "Done syndrome to locator bus layout")
+
+    def route_syndrome_to_bus(self):
+        debug.info(1, "Starting to route syndrome to locator bus")
+        m2m = drc["metal2_to_metal2"]
+        m2min = drc["minwidth_metal2"]
+        i = 0
+        for inv_pos in self.inv_positions:
+            in_offset = inv_pos[0]
+            out_offset = inv_pos[1]
+            in_v_line_offset = vector(in_offset[0], self.syn_to_loc_bus_lines[i])
+            out_v_line_offset = vector(out_offset[0], self.syn_to_loc_bus_lines[i+1])
+            in_height = in_offset[1]-self.syn_to_loc_bus_lines[i]
+            out_height = out_offset[1]-self.syn_to_loc_bus_lines[i+1]
+
+            self.add_rect(layer   = "metal2",
+                          offset  = in_v_line_offset,
+                          width   = m2min,
+                          height  = in_height)
+
+            self.add_rect(layer   = "metal2",
+                          offset  = out_v_line_offset,
+                          width   = m2min,
+                          height  = out_height)
+
+            self.add_via(layers   = ("metal1", "via1", "metal2"),
+                         offset   = in_v_line_offset)
+
+            self.add_via(layers   = ("metal1", "via1", "metal2"),
+                         offset   = out_v_line_offset)
+
+            i += 2
+        debug.info(1, "Done syndrome to locator bus route")
+        
 
     def add_decoder(self):
         debug.info(1, "Starting to layout decoder logic gates")

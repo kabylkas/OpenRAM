@@ -53,12 +53,13 @@ class ecc(design.design):
         self.create_nand_2()
         self.setup_layout_constants()
         self.add_parity_generator()
-        #self.route_parity_generator()
+        self.route_parity_generator()
         self.add_syndrome_generator()
         #self.route_syndrom_generator()
         self.add_syndrome_to_locator_bus()
         self.route_syndrome_to_bus()
         self.add_locator()
+        #self.route_bus_to_locator()
         #self.create_pinv()
 
     def create_xor_2(self):
@@ -79,8 +80,8 @@ class ecc(design.design):
         #layout offsets
         self.syndrome_gen_height = self.xor_2.height
         self.syn_to_loc_bus_height = 2*self.parity_num*\
-                                     (drc["minwidth_metal1"]+drc["metal1_to_metal1"]+1)+\
-                                     drc["metal1_to_metal1"]+1
+                                     (drc["minwidth_metal3"]+drc["metal3_to_metal3"])+\
+                                     drc["metal3_to_metal3"]
         self.locator_height = 2*drc["metal1_to_metal1"]+\
                               2*getattr(self.nand_2, "height")
         self.global_yoffset = self.syndrome_gen_height+\
@@ -427,7 +428,7 @@ class ecc(design.design):
                       height  = 2*drc["minwidth_metal1"])
         self.add_label(text   = "gnd",
                        layer  = "metal1",
-                       offset = vdd_offset)
+                       offset = gnd_offset)
         #update global_y offset
         self.current_global_yoffset -= self.syndrome_gen_height
 
@@ -436,17 +437,26 @@ class ecc(design.design):
         
     def add_syndrome_to_locator_bus(self):
         debug.info(1, "Starting to layout syndrome to locator bus")
-        m2m = drc["metal1_to_metal1"]+1
-        m1min = drc["minwidth_metal1"]
+        m2m = drc["metal3_to_metal3"]
+        m_min = drc["minwidth_metal3"]
         global_yoffset = self.current_global_yoffset-m2m
+        j=0
         for i in range(2*self.parity_num):
-            global_yoffset -= (m2m+m1min)
+            global_yoffset -= (m2m+m_min)
             line_offset = vector(0, global_yoffset)
-            self.add_rect(layer   = "metal1",
+            self.add_rect(layer   = "metal3",
                           offset  = line_offset,
                           width   = self.parity_gen_width,
-                          height  = m1min)
+                          height  = m_min)
+            line_label = "s_out_{0}".format(j)
+            if i%2:
+                line_label = "s_out_{0}_not".format(j)
+                j+=1
 
+            self.add_label(text   = line_label,
+                           layer  = "metal3",
+                           offset = line_offset+vector(1,1))
+            self.add_pin(line_label)
             self.syn_to_loc_bus_lines.append(global_yoffset)
         
         #update global_yoffset
@@ -458,7 +468,7 @@ class ecc(design.design):
     def route_syndrome_to_bus(self):
         debug.info(1, "Starting to route syndrome to locator bus")
         m2m = drc["metal2_to_metal2"]
-        m2min = drc["minwidth_metal2"]
+        m2min = drc["minwidth_metal3"]
         i = 0
         for inv_pos in self.inv_positions:
             in_offset = inv_pos[0]
@@ -478,10 +488,10 @@ class ecc(design.design):
                           width   = m2min,
                           height  = out_height)
 
-            self.add_via(layers   = ("metal1", "via1", "metal2"),
+            self.add_via(layers   = ("metal3", "via2", "metal2"),
                          offset   = in_v_line_offset)
 
-            self.add_via(layers   = ("metal1", "via1", "metal2"),
+            self.add_via(layers   = ("metal3", "via2", "metal2"),
                          offset   = out_v_line_offset)
 
             i += 2
@@ -500,18 +510,19 @@ class ecc(design.design):
         if gate_num%2:
             gate_num_half = int(gate_num/2)+1
         global_xoffset=0
-        nand_2_width = getattr(self.pinv, "width")
-        nand_2_height = getattr(self.pinv, "height")
+        nand_2_width = getattr(self.nand_2, "width")
+        nand_2_height = getattr(self.nand_2, "height")
+        additional_offset = (self.parity_gen_width-self.word_size*gate_num_half*nand_2_width)/(self.word_size*gate_num_half)
         for i in range(self.word_size):
             for j in range(gate_num):
                 name = "locator_nand_{0}_{1}".format(i,j)
                 xoffset = 0
                 flip = 0
                 if j<gate_num_half:
-                    xoffset = j*nand_2_width
+                    xoffset = j*(nand_2_width+additional_offset)
                     direction = "R0"
                 else:
-                    xoffset = (j-gate_num_half)*nand_2_width
+                    xoffset = (j-gate_num_half)*(nand_2_width+additional_offset)
                     direction = "MX"
                     flip = 1
                 xoffset += global_xoffset
@@ -537,30 +548,30 @@ class ecc(design.design):
                                   vector(nand_2_z_position[0], nand_2_z_position[1])-\
                                   vector(0, flip*(nand_2_height-(nand_2_height-2*nand_2_z_position[1])))
 
-                """
                 #add metal2 rect to bring the pin up
-                self.add_rect(layer   = "metal2",
-                              offset  = pinv_output_offset-vector(2,2),
-                              width   = 4,
-                              height  = 4)
-
-
-                self.add_rect(layer   = "metal2",
-                              offset  = pinv_input_offset-vector(0,3),
-                              width   = 2,
-                              height  = 4)
-                """
+                self.add_rect(layer   = "metal2", 
+                              offset  = nand_2_a_offset-vector(2,flip*3),
+                              width   = 3,
+                              height  = 3)
+                self.add_rect(layer   = "metal2", 
+                              offset  = nand_2_b_offset-vector(2,flip*3),
+                              width   = 3,
+                              height  = 3)
+                self.add_rect(layer   = "metal2", 
+                              offset  = nand_2_z_offset-vector(0, flip*3),
+                              width   = 3,
+                              height  = 3)
 
                 #add labels/pins/connect
                 self.add_label(text = "nand2_a_{0}_{1}".format(i,j),
-                               layer = "metal1",
-                               offset = nand_2_a_offset)
+                               layer = "metal2",
+                               offset = nand_2_a_offset+vector(-1,1-2*flip))
                 self.add_label(text = "nand2_b_{0}_{1}".format(i,j),
-                               layer = "metal1",
-                               offset = nand_2_b_offset)
+                               layer = "metal2",
+                               offset = nand_2_b_offset+vector(-1,1-2*flip))
                 self.add_label(text = "nand2_z_{0}_{1}".format(i,j),
-                               layer = "metal1",
-                               offset = nand_2_z_offset)
+                               layer = "metal2",
+                               offset = nand_2_z_offset+vector(1,1-2*flip))
 
                 self.add_pin("nand_2_a_{0}_{1}".format(i,j))
                 self.add_pin("nand_2_b_{0}_{1}".format(i,j))
@@ -570,7 +581,58 @@ class ecc(design.design):
                                    "nand_2_z_{0}_{1}".format(i,j),
                                    "vdd",
                                    "gnd"])
-
-            global_xoffset+=gate_num_half*nand_2_width
+                
+                self.add_via(layers   = ("metal1", "via1", "metal2"),
+                             offset   = nand_2_a_offset-vector(0, flip))
+                self.add_via(layers   = ("metal1", "via1", "metal2"),
+                             offset   = nand_2_b_offset-vector(2,flip))
+                self.add_via(layers   = ("metal1", "via1", "metal2"),
+                             offset   = nand_2_z_offset-vector(0, flip))
+            global_xoffset+=gate_num_half*(nand_2_width+additional_offset)
+        
+        #add vdd and gnd rails
+        gnd_offset = vector(0,global_yoffset-drc["minwidth_metal1"]/2)
+        self.add_rect(layer   = "metal1",
+                      offset  = gnd_offset,
+                      width   = self.parity_gen_width,
+                      height  = drc["minwidth_metal1"])
+        self.add_label(text = "gnd",
+                       layer = "metal1",
+                       offset = gnd_offset)
+        #upper vdd
+        vdd_up_offset = gnd_offset + vector(0, nand_2_height)
+        self.add_rect(layer   = "metal1",
+                      offset  = vdd_up_offset,
+                      width   = self.parity_gen_width,
+                      height  = drc["minwidth_metal1"])
+        self.add_label(text = "vdd",
+                       layer = "metal1",
+                       offset = vdd_up_offset)
+        #bottom vdd
+        vdd_down_offset = gnd_offset - vector(0, nand_2_height)
+        self.add_rect(layer   = "metal1",
+                      offset  = vdd_down_offset,
+                      width   = self.parity_gen_width,
+                      height  = drc["minwidth_metal1"])
+        self.add_label(text = "vdd",
+                       layer = "metal1",
+                       offset = vdd_down_offset)
+        #dump gds for routing
+        self.gds_write(OPTS.openram_temp+"locator.gds")
+        #finish
         debug.info(1, "Done locator logic gates layout")
     
+    def route_bus_to_locator(self):
+        debug.info(1, "Starting to route bus to locator")
+        connections = []
+        connections.append(["nand2_a_0_0", "s_out_3"])
+        connections.append(["nand2_b_0_0", "s_out_2_not"])
+        connections.append(["nand2_a_0_1", "s_out_1_not"])
+        connections.append(["nand2_b_0_1", "s_out_3"])
+
+        r = router.router(OPTS.openram_temp+"locator.gds")
+        layer_stack =("metal3", "via2", "metal2")
+        for connection in connections:
+            r.route(self, layer_stack,src=connection[0], dest=connection[1])
+        
+        debug.info(1, "Done bus to locator route")

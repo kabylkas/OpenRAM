@@ -273,7 +273,7 @@ class ecc(design.design):
         r = router.router(OPTS.openram_temp+"xor2s.gds")
         layer_stack =("metal3", "via2", "metal2")
         for connection in self.xor_2_connections:
-            r.route(self, layer_stack,src=connection[0], dest=connection[1])
+            r.route(self, layer_stack, src=connection[0], dest=connection[1])
         debug.info(1, "Done routing parity generator")
 
 

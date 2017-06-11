@@ -195,6 +195,7 @@ class ecc(design.design):
   
 
             self.gds_write(OPTS.openram_temp+"xor2s.gds")
+            self.gds_write("xor2s.gds")
 
             #generate connections between xor gates in the upper row 
             dst = 0

@@ -172,7 +172,12 @@ class router:
 
             
         # returns the path in tracks
-        (path,cost) = self.rg.route(detour_scale)
+        try:
+            (path,cost) = self.rg.route(detour_scale)
+        except:
+            self.write_debug_gds()
+            quit()
+
         if path:
             debug.info(1,"Found path: cost={0} ".format(cost))
             debug.info(2,str(path))

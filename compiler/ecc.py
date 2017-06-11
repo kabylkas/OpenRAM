@@ -59,7 +59,7 @@ class ecc(design.design):
         self.add_syndrome_to_locator_bus()
         self.route_syndrome_to_bus()
         self.add_locator()
-        #self.route_bus_to_locator()
+        self.route_bus_to_locator()
         #self.create_pinv()
 
     def create_xor_2(self):
@@ -80,7 +80,7 @@ class ecc(design.design):
         #layout offsets
         self.syndrome_gen_height = self.xor_2.height
         self.syn_to_loc_bus_height = 2*self.parity_num*\
-                                     (drc["minwidth_metal3"]+drc["metal3_to_metal3"])+\
+                                     (drc["minwidth_metal3"]+0.5+drc["metal3_to_metal3"])+\
                                      drc["metal3_to_metal3"]
         self.locator_height = 2*drc["metal1_to_metal1"]+\
                               2*getattr(self.nand_2, "height")
@@ -437,7 +437,7 @@ class ecc(design.design):
         
     def add_syndrome_to_locator_bus(self):
         debug.info(1, "Starting to layout syndrome to locator bus")
-        m2m = drc["metal3_to_metal3"]
+        m2m = drc["metal3_to_metal3"]+0.5
         m_min = drc["minwidth_metal3"]
         global_yoffset = self.current_global_yoffset-m2m
         j=0

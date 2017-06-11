@@ -54,13 +54,12 @@ class ecc(design.design):
         self.setup_layout_constants()
         self.add_parity_generator()
         self.route_parity_generator()
-        self.add_syndrome_generator()
+        #self.add_syndrome_generator()
         #self.route_syndrom_generator()
-        self.add_syndrome_to_locator_bus()
-        self.route_syndrome_to_bus()
-        self.add_locator()
-        self.route_bus_to_locator()
-        #self.create_pinv()
+        #self.add_syndrome_to_locator_bus()
+        #self.route_syndrome_to_bus()
+        #self.add_locator()
+        #self.route_bus_to_locator()
 
     def create_xor_2(self):
         self.xor_2 = self.mod_xor_2("xor_2")
@@ -94,11 +93,10 @@ class ecc(design.design):
         #reset lists
         self.vdd_positions = []
         self.gnd_positions = []
-        self.a_positions = []
-        self.b_positions = []
-        self.out_positions = []
         self.xor_2_positions = []
-        self.xor_2_connections = []
+        self.xor_2_label_positions = {}
+        self.xor_2_up_connections = []
+        self.xor_2_down_connections = []
         self.parity_positions = []
         self.inv_positions = []
         self.syn_to_loc_bus_lines = []
@@ -148,12 +146,11 @@ class ecc(design.design):
                 out_flip_offset = vector(0,0)
                 if direction == "MX":
                     xor_2_h = self.xor_2.height
-                    ab_y_distance = self.xor_2_chars["a"][1]-self.xor_2_chars["b"][1]
                     #a
-                    a_y = xor_2_h+ab_y_distance
+                    a_y = xor_2_h-(xor_2_h-2*self.xor_2_chars["a"][1])
                     a_flip_offset = vector(0,a_y)
                     #b
-                    b_y = xor_2_h-ab_y_distance
+                    b_y = xor_2_h-(xor_2_h-2*self.xor_2_chars["b"][1])
                     b_flip_offset = vector(0, b_y)
                     #out
                     out_y = xor_2_h-(xor_2_h-2*self.xor_2_chars["out"][1])
@@ -175,7 +172,10 @@ class ecc(design.design):
                               mod = self.xor_2,
                               offset = xor_2_position,
                               mirror = direction)
-
+          
+                self.xor_2_label_positions["a_{0}_{1}".format(parity_i, i)] = a_offset
+                self.xor_2_label_positions["b_{0}_{1}".format(parity_i, i)] = b_offset
+                self.xor_2_label_positions["out_{0}_{1}".format(parity_i, i)] = out_offset
                 self.xor_2_positions.append(xor_2_position)
 
                 #add labels
@@ -212,16 +212,17 @@ class ecc(design.design):
             src = gate_num_half
             while dst<gate_num_half:
                 xor_2_connection = ("out_{0}_{1}".format(parity_i, src), "a_{0}_{1}".format(parity_i, dst))
-                self.xor_2_connections.append(xor_2_connection)
+                self.xor_2_up_connections.append(xor_2_connection)
                 if src+1<gate_num:
                     xor_2_connection = ("out_{0}_{1}".format(parity_i, src+1), "b_{0}_{1}".format(parity_i, dst))
-                    self.xor_2_connections.append(xor_2_connection)
+                    self.xor_2_up_connections.append(xor_2_connection)
                 dst=dst+2
                 src=src+2
 
             #generate connections between xor gates in the bottom row
             inc = 1
             done = False
+            depth = 0
             while not done:
                 offset = inc
                 first_iteration = True
@@ -229,13 +230,13 @@ class ecc(design.design):
                     first = offset
                     second = offset + inc
                     if second<=gate_num_half:
-                        xor_2_connection = ("out_{0}_{1}".format(parity_i, first-1), "a_{0}_{1}".format(parity_i, second-1))
-                        self.xor_2_connections.append(xor_2_connection)
+                        xor_2_connection = ("out_{0}_{1}".format(parity_i, first-1), "a_{0}_{1}".format(parity_i, second-1), depth)
+                        self.xor_2_down_connections.append(xor_2_connection)
 
                     third = offset + 2*inc
                     if third<=gate_num_half:
-                        xor_2_connection = ("out_{0}_{1}".format(parity_i, third-1), "b_{0}_{1}".format(parity_i, second-1))
-                        self.xor_2_connections.append(xor_2_connection)
+                        xor_2_connection = ("b_{0}_{1}".format(parity_i, second-1), "out_{0}_{1}".format(parity_i, third-1), depth)
+                        self.xor_2_down_connections.append(xor_2_connection)
                         first_iteration = False
 
                     offset = offset + 4*inc
@@ -243,10 +244,11 @@ class ecc(design.design):
                 if first_iteration and third>gate_num_half:
                     done = True
                     if second<gate_num_half:
-                        xor_2_connection = ("out_{0}_{1}".format(parity_i, gate_num_half-1), "b_{0}_{1}".format(parity_i, second-1))
-                        self.xor_2_connections.append(xor_2_connection)
+                        xor_2_connection = ("b_{0}_{1}".format(parity_i, second-1), "out_{0}_{1}".format(parity_i, gate_num_half-1), depth)
+                        self.xor_2_down_connections.append(xor_2_connection)
                     
                 inc = 2*inc
+                depth += 1
         
         #remember last global X offset
         self.parity_gen_width = global_xoffset
@@ -270,10 +272,66 @@ class ecc(design.design):
 
     def route_parity_generator(self):
         debug.info(1, "Starting routing parity generator")
-        r = router.router(OPTS.openram_temp+"xor2s.gds")
-        layer_stack =("metal3", "via2", "metal2")
-        for connection in self.xor_2_connections:
-            r.route(self, layer_stack, src=connection[0], dest=connection[1])
+        #route upper row of xor gates
+        for connection in self.xor_2_up_connections:
+            src = self.xor_2_label_positions[connection[0]]
+            dest = self.xor_2_label_positions[connection[1]]
+            print "{0} --> {1}".format(src, dest)
+            m2min = drc["minwidth_metal2"]
+            h = src[1]-dest[1]
+            m2_offset = vector(src[0], dest[1])-vector(m2min, m2min)
+            self.add_rect(layer   = "metal2",
+                          offset  = m2_offset,
+                          width   = m2min,
+                          height  = h)
+
+            m3_offset = vector(dest[0], dest[1])-vector(m2min, m2min)
+            w = src[0]-dest[0]
+            self.add_rect(layer   = "metal3",
+                          offset  = m3_offset,
+                          width   = w,
+                          height  = drc["minwidth_metal3"])
+            self.add_via(layers   = ("metal3", "via2", "metal2"),
+                         offset   = m3_offset)
+            self.add_via(layers   = ("metal3", "via2", "metal2"),
+                         offset   = m2_offset)
+
+        for connection in self.xor_2_down_connections:
+            src = self.xor_2_label_positions[connection[0]]
+            dest = self.xor_2_label_positions[connection[1]]
+            depth = connection[2]
+            m2min = drc["minwidth_metal2"]
+            m3m = drc["metal3_to_metal3"]
+            m3min = drc["minwidth_metal3"]
+            yoffset = self.xor_2_label_positions["out_0_0"][1] - m3m-m3min - depth*(m3m+m3min)
+
+            m3_offset = vector(src[0], yoffset)-vector(m2min,0)
+            w = dest[0]-src[0]
+            self.add_rect(layer   = "metal3",
+                          offset  = m3_offset,
+                          width   = w,
+                          height  = drc["minwidth_metal3"])
+
+            m2_offset = m3_offset
+            w = m2min
+            h = src[1]-yoffset
+            self.add_rect(layer   = "metal2",
+                          offset  = m2_offset,
+                          width   = w,
+                          height  = h)
+            self.add_via(layers   = ("metal3", "via2", "metal2"),
+                         offset   = m2_offset)
+
+            m2_offset = vector(dest[0], yoffset)-vector(m2min,0)
+            w = m2min
+            h = dest[1]-yoffset
+            self.add_rect(layer   = "metal2",
+                          offset  = m2_offset,
+                          width   = w,
+                          height  = h)
+            self.add_via(layers   = ("metal3", "via2", "metal2"),
+                         offset   = m2_offset)
+
         debug.info(1, "Done routing parity generator")
 
 

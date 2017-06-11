@@ -24,9 +24,9 @@ class ecc_test(unittest.TestCase):
         OPTS.check_lvsdrc = False
       
         import ecc
-        debug.info(2, "Testing ECC for word_size=8")
+        debug.info(2, "Testing ECC for word_size=16")
         
-        dut = ecc.ecc(word_size=8)
+        dut = ecc.ecc(word_size=16)
         self.local_check(dut)
         globals.end_openram()
 

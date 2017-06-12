@@ -64,7 +64,7 @@ class ecc(design.design):
         self.add_syndrome_to_locator_bus()
         self.route_syndrome_to_bus()
         self.add_locator()
-        #self.route_bus_to_locator()
+        self.route_bus_to_locator()
 
     def create_xor_2(self):
         self.xor_2 = self.mod_xor_2("xor_2")
@@ -107,6 +107,7 @@ class ecc(design.design):
         self.parity_positions = []
         self.inv_positions = []
         self.syn_to_loc_bus_lines = []
+        self.syn_to_loc_bus_connections = []
 
     def add_parity_generator(self):
         debug.info(1, "Laying out xor2 gates...")
@@ -244,14 +245,14 @@ class ecc(design.design):
                     if second<=gate_num_half:
                         xor_2_connection = ("out_{0}_{1}".format(parity_i, first-1), "a_{0}_{1}".format(parity_i, second-1), depth)
                         self.xor_2_down_connections.append(xor_2_connection)
-                        out = second
+                        out = second-1
 
                     third = offset + 2*inc
                     if third<=gate_num_half:
                         xor_2_connection = ("b_{0}_{1}".format(parity_i, second-1), "out_{0}_{1}".format(parity_i, third-1), depth)
                         self.xor_2_down_connections.append(xor_2_connection)
                         first_iteration = False
-                        out = second
+                        out = second-1
 
                     offset = offset + 4*inc
 
@@ -260,11 +261,11 @@ class ecc(design.design):
                     if second<gate_num_half:
                         xor_2_connection = ("b_{0}_{1}".format(parity_i, second-1), "out_{0}_{1}".format(parity_i, gate_num_half-1), depth)
                         self.xor_2_down_connections.append(xor_2_connection)
-                        out = second
+                        out = second-1
                     
                 inc = 2*inc
                 depth += 1
-            self.parity_output_gates.append(out-1)
+            self.parity_output_gates.append(out)
             print out-1
         #remember last global X offset
         self.parity_gen_width = global_xoffset
@@ -750,6 +751,11 @@ class ecc(design.design):
                                layer = "metal2",
                                offset = nand_2_z_offset+vector(1,1-2*flip))
 
+                #append labels to connections as destination, source will be added later
+                if direction == "R0":
+                    self.syn_to_loc_bus_connections.append(["", "nand2_a_{0}_{1}".format(i,j)])
+                    self.syn_to_loc_bus_connections.append(["", "nand2_b_{0}_{1}".format(i,j)])
+
                 self.add_pin("nand_2_a_{0}_{1}".format(i,j))
                 self.add_pin("nand_2_b_{0}_{1}".format(i,j))
                 self.add_pin("nand_2_z_{0}_{1}".format(i,j))
@@ -766,7 +772,11 @@ class ecc(design.design):
                 self.add_via(layers   = ("metal1", "via1", "metal2"),
                              offset   = nand_2_z_offset-vector(0, flip))
             global_xoffset+=gate_num_half*(nand_2_width+additional_offset)
-        
+            #adding last connection from syndrome to locator bus in case 
+            #gate numbers on upper row are even 
+            if not gate_num%2:
+                self.syn_to_loc_bus_connections.append(["", "nand2_b_{0}_{1}".format(i,gate_num-1)])
+            
         #add vdd and gnd rails
         gnd_offset = vector(0,global_yoffset-drc["minwidth_metal1"]/2)
         self.add_rect(layer   = "metal1",
@@ -796,20 +806,29 @@ class ecc(design.design):
                        offset = vdd_down_offset)
         #dump gds for routing
         self.gds_write(OPTS.openram_temp+"locator.gds")
+
+        #generate source of the connections between bus and the locator
+        total_bit_num = self.word_size+self.parity_num
+        k=0
+        for i in range(1,total_bit_num+1):
+            log2 = math.log10(i)/math.log10(2)
+            if not (log2-math.ceil(log2))==0:
+                number = i
+                for j in range(self.parity_num):
+                    src = ""
+                    if number%2:
+                        src = "s_out_{0}".format(j)
+                    else:
+                        src = "s_out_{0}_not".format(j)
+                    self.syn_to_loc_bus_connections[k][0] = src
+                    number = number >> 1
+                    k+=1
         #finish
         debug.info(1, "Done locator logic gates layout")
     
     def route_bus_to_locator(self):
         debug.info(1, "Starting to route bus to locator")
-        connections = []
-        connections.append(["nand2_a_0_0", "s_out_3"])
-        connections.append(["nand2_b_0_0", "s_out_2_not"])
-        connections.append(["nand2_a_0_1", "s_out_1_not"])
-        connections.append(["nand2_b_0_1", "s_out_3"])
-
-        r = router.router(OPTS.openram_temp+"locator.gds")
-        layer_stack =("metal3", "via2", "metal2")
-        for connection in connections:
-            r.route(self, layer_stack,src=connection[0], dest=connection[1])
-        
+        for connection in self.syn_to_loc_bus_connections:
+            print connection            
+        #finish 
         debug.info(1, "Done bus to locator route")

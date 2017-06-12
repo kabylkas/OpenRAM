@@ -31,7 +31,12 @@ class ecc(design.design):
 
         self.add_pins()
         self.create_layout()
+        #self.print_drc_rules()
         #self.DRC_LVS()
+
+    def print_drc_rules(self):
+        for key, value in drc.iteritems():
+            print key, value
 
     def add_pins(self):
         #add input pins
@@ -54,11 +59,11 @@ class ecc(design.design):
         self.setup_layout_constants()
         self.add_parity_generator()
         self.route_parity_generator()
-        #self.add_syndrome_generator()
-        #self.route_syndrom_generator()
-        #self.add_syndrome_to_locator_bus()
-        #self.route_syndrome_to_bus()
-        #self.add_locator()
+        self.add_syndrome_generator()
+        self.route_syndrome_generator()
+        self.add_syndrome_to_locator_bus()
+        self.route_syndrome_to_bus()
+        self.add_locator()
         #self.route_bus_to_locator()
 
     def create_xor_2(self):
@@ -79,8 +84,8 @@ class ecc(design.design):
         #layout offsets
         self.syndrome_gen_height = self.xor_2.height
         self.syn_to_loc_bus_height = 2*self.parity_num*\
-                                     (drc["minwidth_metal3"]+0.5+drc["metal3_to_metal3"])+\
-                                     drc["metal3_to_metal3"]
+                                     (drc["minwidth_metal1"]+drc["metal1_enclosure_via1"]+drc["metal1_to_metal1"])+\
+                                     drc["metal1_to_metal1"]
         self.locator_height = 2*drc["metal1_to_metal1"]+\
                               2*getattr(self.nand_2, "height")
         self.global_yoffset = self.syndrome_gen_height+\
@@ -95,6 +100,8 @@ class ecc(design.design):
         self.gnd_positions = []
         self.xor_2_positions = []
         self.xor_2_label_positions = {}
+        self.parity_output_gates = []
+        self.syn_label_positions = {}
         self.xor_2_up_connections = []
         self.xor_2_down_connections = []
         self.parity_positions = []
@@ -206,7 +213,6 @@ class ecc(design.design):
             global_xoffset = global_xoffset + int(math.ceil(gate_num/2))*self.xor_2.width
             if gate_num%2:
                 global_xoffset = global_xoffset + self.xor_2.width
-
             #generate connections between xor gates in the upper row 
             dst = 0
             src = gate_num_half
@@ -218,11 +224,17 @@ class ecc(design.design):
                     self.xor_2_up_connections.append(xor_2_connection)
                 dst=dst+2
                 src=src+2
-
+            #add one more connection if upper row gates are not even
+            if gate_num%2:
+                up_row_gate_num = gate_num-gate_num_half
+                if up_row_gate_num%2:
+                    xor_2_connection = ("out_{0}_{1}".format(parity_i,gate_num-1), "b_{0}_{1}".format(parity_i, gate_num_half-1))
+                    self.xor_2_up_connections.append(xor_2_connection)
             #generate connections between xor gates in the bottom row
             inc = 1
             done = False
             depth = 0
+            out = 0
             while not done:
                 offset = inc
                 first_iteration = True
@@ -232,12 +244,14 @@ class ecc(design.design):
                     if second<=gate_num_half:
                         xor_2_connection = ("out_{0}_{1}".format(parity_i, first-1), "a_{0}_{1}".format(parity_i, second-1), depth)
                         self.xor_2_down_connections.append(xor_2_connection)
+                        out = second
 
                     third = offset + 2*inc
                     if third<=gate_num_half:
                         xor_2_connection = ("b_{0}_{1}".format(parity_i, second-1), "out_{0}_{1}".format(parity_i, third-1), depth)
                         self.xor_2_down_connections.append(xor_2_connection)
                         first_iteration = False
+                        out = second
 
                     offset = offset + 4*inc
 
@@ -246,10 +260,12 @@ class ecc(design.design):
                     if second<gate_num_half:
                         xor_2_connection = ("b_{0}_{1}".format(parity_i, second-1), "out_{0}_{1}".format(parity_i, gate_num_half-1), depth)
                         self.xor_2_down_connections.append(xor_2_connection)
+                        out = second
                     
                 inc = 2*inc
                 depth += 1
-        
+            self.parity_output_gates.append(out-1)
+            print out-1
         #remember last global X offset
         self.parity_gen_width = global_xoffset
          
@@ -276,25 +292,41 @@ class ecc(design.design):
         for connection in self.xor_2_up_connections:
             src = self.xor_2_label_positions[connection[0]]
             dest = self.xor_2_label_positions[connection[1]]
-            print "{0} --> {1}".format(src, dest)
             m2min = drc["minwidth_metal2"]
-            h = src[1]-dest[1]
-            m2_offset = vector(src[0], dest[1])-vector(m2min, m2min)
+            m3min = drc["minwidth_metal3"]
+            m2m = drc["metal2_to_metal2"]
+            m3m = drc["metal3_to_metal3"]
+            yoffset = self.xor_2_label_positions["a_0_0"][1] + (m3m+m3min)
+            m3_extend_via2 = drc["metal3_extend_via2"] 
+            #vertical m2 from source up to yoffset
+            w = m2m
+            h = src[1]-yoffset
+            offset = vector(src[0], yoffset)
             self.add_rect(layer   = "metal2",
-                          offset  = m2_offset,
-                          width   = m2min,
-                          height  = h)
-
-            m3_offset = vector(dest[0], dest[1])-vector(m2min, m2min)
-            w = src[0]-dest[0]
-            self.add_rect(layer   = "metal3",
-                          offset  = m3_offset,
+                          offset  = offset,
                           width   = w,
-                          height  = drc["minwidth_metal3"])
+                          height  = h)
+            #vertical m2 from destination up to yoffset
+            w = m2m
+            h = yoffset-dest[1]
+            offset = vector(dest[0], dest[1])
+            self.add_rect(layer   = "metal2",
+                          offset  = offset,
+                          width   = w,
+                          height  = h)
+            #horizontal m3 from src to destination on yoffset
+            w = dest[0]-src[0]
+            h = m3min
+            offset = vector(src[0], yoffset)
+            self.add_rect(layer   = "metal3",
+                          offset  = offset,
+                          width   = w,
+                          height  = h)
+            #add vias on both ends
             self.add_via(layers   = ("metal3", "via2", "metal2"),
-                         offset   = m3_offset)
+                         offset   = vector(src[0], yoffset)-vector(m3_extend_via2/2, m3_extend_via2/2))
             self.add_via(layers   = ("metal3", "via2", "metal2"),
-                         offset   = m2_offset)
+                         offset   = vector(dest[0], yoffset)-vector(m3_extend_via2/2, m3_extend_via2/2))
 
         for connection in self.xor_2_down_connections:
             src = self.xor_2_label_positions[connection[0]]
@@ -358,12 +390,11 @@ class ecc(design.design):
             out_flip_offset = vector(0,0)
             direction = "MX"
             xor_2_h = self.xor_2.height
-            ab_y_distance = self.xor_2_chars["a"][1]-self.xor_2_chars["b"][1]
             #a label
-            a_y = xor_2_h+ab_y_distance
+            a_y = xor_2_h-(xor_2_h-2*self.xor_2_chars["a"][1])
             a_flip_offset = vector(0,a_y)
             #b label
-            b_y = xor_2_h-ab_y_distance
+            b_y = xor_2_h-(xor_2_h-2*self.xor_2_chars["b"][1])
             b_flip_offset = vector(0, b_y)
             #out label
             out_y = xor_2_h-(xor_2_h-2*self.xor_2_chars["out"][1])
@@ -398,6 +429,11 @@ class ecc(design.design):
                            layer = "metal2",
                            offset = out_offset)
 
+            #remember label positions for routing
+            self.syn_label_positions["syn_a_{0}".format(i)] = a_offset
+            self.syn_label_positions["syn_b_{0}".format(i)] = b_offset
+            self.syn_label_positions["syn_out_{0}".format(i)] = out_offset
+            #add pins
             self.add_pin("syn_a_{0}".format(i))
             self.add_pin("syn_b_{0}".format(i))
             self.add_pin("syn_out_{0}".format(i))
@@ -413,7 +449,7 @@ class ecc(design.design):
             ######################
 
             name = "syndrome_inv_{0}".format(i)
-            pinv_position = vector(x_syndrome_position+self.xor_2.width, self.global_yoffset-drc["minwidth_metal1"]/2)
+            pinv_position = vector(x_syndrome_position+self.xor_2.width+2*drc["metal2_to_metal2"], self.global_yoffset-drc["minwidth_metal1"]/2)
             #add current xor2 to the design
             self.add_inst(name = name, 
                           mod = self.pinv,
@@ -431,17 +467,6 @@ class ecc(design.design):
                                  vector(pinv_output_position[0], pinv_output_position[1])-\
                                  vector(0,xor_2_h-(xor_2_h-2*pinv_output_position[1]))
 
-            #add metal2 rect to bring the pin up
-            self.add_rect(layer   = "metal2",
-                          offset  = pinv_output_offset-vector(2,2),
-                          width   = 4,
-                          height  = 4)
-
-
-            self.add_rect(layer   = "metal2",
-                          offset  = pinv_input_offset-vector(0,3),
-                          width   = 2,
-                          height  = 4)
 
             #add labels/pins/connect
             self.add_label(text = "inv_a_{0}".format(i),
@@ -456,8 +481,9 @@ class ecc(design.design):
                                "inv_z_{0}".format(i),
                                "vdd",
                                "gnd"])
-
-            inv_in_out_pair = [pinv_input_offset-vector(0,1), pinv_output_offset-vector(0,1)]
+        
+            minm1 = drc["minwidth_metal1"]
+            inv_in_out_pair = [pinv_input_offset-vector(0,minm1), pinv_output_offset-vector(0,minm1)]
             self.add_via(layers   = ("metal1", "via1", "metal2"),
                          offset   = inv_in_out_pair[0])
             self.add_via(layers   = ("metal1", "via1", "metal2"),
@@ -465,6 +491,10 @@ class ecc(design.design):
   
             #save in and out pair for routing
             self.inv_positions.append(inv_in_out_pair)
+            #remember label offsets for routing
+            self.syn_label_positions["inv_a_{0}".format(i)] = inv_in_out_pair[0]
+            self.syn_label_positions["inv_z_{0}".format(i)] = inv_in_out_pair[1]
+            
             #increase counter
             i = i + 1
         ########################
@@ -493,16 +523,105 @@ class ecc(design.design):
         #finish
         debug.info(1, "Done syndrom layout")
         
+    def route_syndrome_generator(self):
+        debug.info(1, "Starting to route syndrome generator")
+        #route syndrome output to the inverter
+        for i in range(self.parity_num):
+            connection = ("syn_out_{0}".format(i), "inv_a_{0}".format(i))
+
+            src = self.syn_label_positions[connection[0]]
+            dest = self.syn_label_positions[connection[1]]
+            m2min = drc["minwidth_metal2"]
+            m3min = drc["minwidth_metal3"]
+            m2m = drc["metal2_to_metal2"]
+            m3m = drc["metal3_to_metal3"]
+            yoffset = src[1]+m3m+m3min
+            m3_extend_via2 = drc["metal3_extend_via2"] 
+            #vertical m2 from source up to yoffset
+            w = m2m
+            h = yoffset-src[1]
+            offset = vector(src[0], src[1])
+            self.add_rect(layer   = "metal2",
+                          offset  = offset,
+                          width   = w,
+                          height  = h)
+            #vertical m2 from destination up to yoffset
+            w = m2m
+            h = yoffset-dest[1]
+            offset = vector(dest[0], dest[1])
+            self.add_rect(layer   = "metal2",
+                          offset  = offset,
+                          width   = w,
+                          height  = h)
+            #horizontal m3 from src to destination on yoffset
+            w = dest[0]-src[0]
+            h = m3min
+            offset = vector(src[0], yoffset)
+            self.add_rect(layer   = "metal3",
+                          offset  = offset,
+                          width   = w,
+                          height  = h)
+            #add vias on both ends
+            self.add_via(layers   = ("metal3", "via2", "metal2"),
+                         offset   = vector(src[0], yoffset)-vector(m3_extend_via2/2, m3_extend_via2/2))
+            self.add_via(layers   = ("metal3", "via2", "metal2"),
+                         offset   = vector(dest[0], yoffset)-vector(m3_extend_via2/2, m3_extend_via2/2))
+
+        #route parity outputs to the syndrome generator
+        i=0
+        for out_gate in self.parity_output_gates:
+            connection = ("out_{0}_{1}".format(i, out_gate), "syn_b_{0}".format(i))
+            i+=1
+            src = self.xor_2_label_positions[connection[0]]
+            dest = self.syn_label_positions[connection[1]]
+            m2min = drc["minwidth_metal2"]
+            m3min = drc["minwidth_metal3"]
+            m2m = drc["metal2_to_metal2"]
+            m3m = drc["metal3_to_metal3"]
+            m3_extend_via2 = drc["metal3_extend_via2"]
+            yoffset = dest[1]+4*(m3m+m3min)
+            #vertical m2 from source down to yoffset
+            w = m2m
+            h = src[1]-yoffset
+            offset = vector(src[0], yoffset)
+            self.add_rect(layer   = "metal2",
+                          offset  = offset,
+                          width   = w,
+                          height  = h)
+            #vertical m2 from source up to yoffset
+            w = m2m
+            h = dest[1]-yoffset
+            offset = vector(dest[0], yoffset)
+            self.add_rect(layer   = "metal2",
+                          offset  = offset,
+                          width   = w,
+                          height  = h)
+            #horizontal m3 from src to destination on yoffset
+            w = dest[0]-src[0]
+            h = m3min
+            offset = vector(src[0], yoffset)
+            self.add_rect(layer   = "metal3",
+                          offset  = offset,
+                          width   = w,
+                          height  = h)
+            #add vias on both ends
+            self.add_via(layers   = ("metal3", "via2", "metal2"),
+                         offset   = vector(src[0], yoffset)-vector(m3_extend_via2/2, m3_extend_via2/2))
+            self.add_via(layers   = ("metal3", "via2", "metal2"),
+                         offset   = vector(dest[0], yoffset)-vector(m3_extend_via2/2, m3_extend_via2/2))
+        #finish
+        debug.info(1, "Done syndrom generator route")
+
     def add_syndrome_to_locator_bus(self):
         debug.info(1, "Starting to layout syndrome to locator bus")
-        m2m = drc["metal3_to_metal3"]+0.5
-        m_min = drc["minwidth_metal3"]
-        global_yoffset = self.current_global_yoffset-m2m
+        m1m = drc["metal1_to_metal1"]
+        m_min = drc["minwidth_metal1"]+drc["metal1_enclosure_via1"]
+        global_yoffset = self.current_global_yoffset-m1m
         j=0
         for i in range(2*self.parity_num):
-            global_yoffset -= (m2m+m_min)
+            global_yoffset -= (m1m+m_min)
             line_offset = vector(0, global_yoffset)
-            self.add_rect(layer   = "metal3",
+            self.add_rect(layer   = "metal1",
                           offset  = line_offset,
                           width   = self.parity_gen_width,
                           height  = m_min)
@@ -512,7 +631,7 @@ class ecc(design.design):
                 j+=1
 
             self.add_label(text   = line_label,
-                           layer  = "metal3",
+                           layer  = "metal1",
                            offset = line_offset+vector(1,1))
             self.add_pin(line_label)
             self.syn_to_loc_bus_lines.append(global_yoffset)
@@ -526,7 +645,7 @@ class ecc(design.design):
     def route_syndrome_to_bus(self):
         debug.info(1, "Starting to route syndrome to locator bus")
         m2m = drc["metal2_to_metal2"]
-        m2min = drc["minwidth_metal3"]
+        m2min = drc["minwidth_metal2"]
         i = 0
         for inv_pos in self.inv_positions:
             in_offset = inv_pos[0]
@@ -546,10 +665,10 @@ class ecc(design.design):
                           width   = m2min,
                           height  = out_height)
 
-            self.add_via(layers   = ("metal3", "via2", "metal2"),
+            self.add_via(layers   = ("metal1", "via1", "metal2"),
                          offset   = in_v_line_offset)
 
-            self.add_via(layers   = ("metal3", "via2", "metal2"),
+            self.add_via(layers   = ("metal1", "via1", "metal2"),
                          offset   = out_v_line_offset)
 
             i += 2

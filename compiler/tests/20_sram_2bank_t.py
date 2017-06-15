@@ -26,7 +26,7 @@ class sram_2bank_test(unittest.TestCase):
         import sram
 
         debug.info(1, "Testing sample 8bit, 128word SRAM, 2 banks")
-        a = sram.sram(word_size=8, num_words=128, num_banks=2, name="test_sram1")
+        a = sram.sram(word_size=32, num_words=128, num_banks=2, name="test_sram1")
         OPTS.check_lvsdrc = True
         self.local_check(a)
 

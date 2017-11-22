@@ -3,7 +3,6 @@ config_file = example_config_scn3me_subm.py
 
 run:
 		python ./tests/31_ecc_test.py -v -t scn3me_subm
-		glade ecc.gds
  
 run_ex:
 		python ./tests/19_bank_test.py -v -t scn3me_subm 

@@ -18,41 +18,57 @@ class path_test(unittest.TestCase):
 
     def runTest(self):
         globals.init_openram("config_20_{0}".format(OPTS.tech_name))
+        OPTS.check_lvsdrc = False
 
         import path
         import tech
+        import design
 
         min_space = 2 * tech.drc["minwidth_metal1"]
         layer_stack = ("metal1")
-        position_list = [[0, 0],
-                         [0, 3 * min_space],
-                         [1 * min_space, 3 * min_space],
-                         [4 * min_space, 3 * min_space],
-                         [4 * min_space, 0],
-                         [7 * min_space, 0],
-                         [7 * min_space, 4 * min_space],
-                         [-1 * min_space, 4 * min_space],
-                         [-1 * min_space, 0]]
-        OPTS.check_lvsdrc = False
-        w = path.path(layer_stack, position_list)
+        # checks if we can retrace a path
+        position_list = [[0,0],
+                         [0, 3 * min_space ],
+                         [4 * min_space, 3 * min_space ],
+                         [4 * min_space, 3 * min_space ],
+                         [0, 3 * min_space ],
+                         [0, 6 * min_space ]]
+        w = design.design("path_test0")
+        path.path(w,layer_stack, position_list)
         self.local_check(w)
-        OPTS.check_lvsdrc = True
+
+
+        min_space = 2 * tech.drc["minwidth_metal1"]
+        layer_stack = ("metal1")
+        old_position_list = [[0, 0],
+                             [0, 3 * min_space],
+                             [1 * min_space, 3 * min_space],
+                             [4 * min_space, 3 * min_space],
+                             [4 * min_space, 0],
+                             [7 * min_space, 0],
+                             [7 * min_space, 4 * min_space],
+                             [-1 * min_space, 4 * min_space],
+                             [-1 * min_space, 0]]
+        position_list  = [[x+min_space, y+min_space] for x,y in old_position_list]
+        w = design.design("path_test1")
+        path.path(w,layer_stack, position_list)
+        self.local_check(w)
 
         min_space = 2 * tech.drc["minwidth_metal2"]
         layer_stack = ("metal2")
-        position_list = [[0, 0],
-                         [0, 3 * min_space],
-                         [1 * min_space, 3 * min_space],
-                         [4 * min_space, 3 * min_space],
-                         [4 * min_space, 0],
-                         [7 * min_space, 0],
-                         [7 * min_space, 4 * min_space],
-                         [-1 * min_space, 4 * min_space],
-                         [-1 * min_space, 0]]
-        OPTS.check_lvsdrc = False
-        w = path.path(layer_stack, position_list)
+        old_position_list = [[0, 0],
+                             [0, 3 * min_space],
+                             [1 * min_space, 3 * min_space],
+                             [4 * min_space, 3 * min_space],
+                             [4 * min_space, 0],
+                             [7 * min_space, 0],
+                             [7 * min_space, 4 * min_space],
+                             [-1 * min_space, 4 * min_space],
+                             [-1 * min_space, 0]]
+        position_list  = [[x-min_space, y-min_space] for x,y in old_position_list]
+        w = design.design("path_test2")
+        path.path(w, layer_stack, position_list)
         self.local_check(w)
-        OPTS.check_lvsdrc = True
 
         min_space = 2 * tech.drc["minwidth_metal3"]
         layer_stack = ("metal3")
@@ -67,10 +83,8 @@ class path_test(unittest.TestCase):
                          [-1 * min_space, 0]]
         # run on the reverse list
         position_list.reverse()
-        OPTS.check_lvsdrc = False
-        w = path.path(layer_stack, position_list)
-        OPTS.check_lvsdrc = True
-
+        w = design.design("path_test3")
+        path.path(w, layer_stack, position_list)
         self.local_check(w)
 
         # return it back to it's normal state

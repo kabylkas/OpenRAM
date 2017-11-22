@@ -29,9 +29,10 @@ class nor_2_test(unittest.TestCase):
         import tech
 
         debug.info(2, "Checking 2-input nor gate")
-        tx = nor_2.nor_2(nmos_width=2 * tech.drc["minwidth_tx"])
-        OPTS.check_lvsdrc = True
+        tx = nor_2.nor_2()
         self.local_check(tx)
+
+        OPTS.check_lvsdrc = True
         globals.end_openram()
 
     def local_check(self, tx):

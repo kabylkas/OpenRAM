@@ -18,12 +18,12 @@ class pinv(design.design):
 
     unique_id = 1
     
-    def __init__(self, nmos_width=1, beta=3, height=bitcell.chars["height"], route_output=True):
+    def __init__(self, nmos_width=drc["minwidth_tx"], beta=parameter["pinv_beta"], height=bitcell.height, route_output=True):
         """Constructor : Creates a cell for a simple inverter"""
         name = "pinv{0}".format(pinv.unique_id)
         pinv.unique_id += 1
         design.design.__init__(self, name)
-        debug.info(2, "create pinv strcuture {0} with size of {1}".format(name, nmos_width))
+        debug.info(2, "create pinv structure {0} with size of {1}".format(name, nmos_width))
 
         self.nmos_width = nmos_width
         self.beta = beta
@@ -32,7 +32,7 @@ class pinv(design.design):
 
         self.add_pins()
         self.create_layout()
-        self.DRC_LVS()
+        #self.DRC_LVS()
 
     def add_pins(self):
         """Adds pins for spice netlist processing"""
@@ -53,9 +53,9 @@ class pinv(design.design):
 
         # These aren't for instantiating, but we use them to get the dimensions
         self.nwell_contact = contact.contact(layer_stack=("active", "contact", "metal1"),
-                                             dimensions=(1, self.pmos.num_of_tacts))
+                                             dimensions=(1, self.pmos.num_contacts))
         self.pwell_contact = contact.contact(layer_stack=("active", "contact", "metal1"),
-                                             dimensions=(1, self.nmos.num_of_tacts))
+                                             dimensions=(1, self.nmos.num_contacts))
 
         self.extend_wells()
         self.extend_active()
@@ -64,7 +64,6 @@ class pinv(design.design):
         self.connect_rails()
         self.connect_tx()
         self.route_pins()
-        self.setup_layout_offsets()
 
     def determine_tx_mults(self):
         """Determines the number of fingers needed to achieve same size with a height constraint"""
@@ -75,7 +74,7 @@ class pinv(design.design):
         # this should be 2*poly extension beyond active?
         minwidth_box_poly = 2 * drc["minwidth_poly"] \
                             + drc["poly_to_poly"]
-        well_to_well = max(drc["pwell_enclose_nwell"],
+        well_to_well = max(drc["pwell_to_nwell"],
                            minwidth_poly_contact,
                            minwidth_box_poly)
 
@@ -97,15 +96,15 @@ class pinv(design.design):
         """Intiializes a ptx object"""
         self.nmos = ptx(width=self.nmos_size,
                         mults=self.tx_mults,
-                        tx_type="nmos")
-        self.nmos.connect_fingered_poly()
-        self.nmos.connect_fingered_active()
+                        tx_type="nmos",
+                        connect_active=True,
+                        connect_poly=True)
         self.add_mod(self.nmos)
         self.pmos = ptx(width=self.pmos_size,
                         mults=self.tx_mults,
-                        tx_type="pmos")
-        self.pmos.connect_fingered_poly()
-        self.pmos.connect_fingered_active()
+                        tx_type="pmos",
+                        connect_active=True,
+                        connect_poly=True)
         self.add_mod(self.pmos)
 
     def setup_layout_constants(self):
@@ -126,17 +125,17 @@ class pinv(design.design):
 
         self.gnd_position = vector(0, - 0.5 * drc["minwidth_metal1"])  # for tiling purposes
         self.add_layout_pin(text="gnd",
-                      layer="metal1",
-                      offset=self.gnd_position,
-                      width=rail_width,
-                      height=rail_height)
+                            layer="metal1",
+                            offset=self.gnd_position,
+                            width=rail_width,
+                            height=rail_height)
 
         self.vdd_position = vector(0, self.height - 0.5 * drc["minwidth_metal1"])
         self.add_layout_pin(text="vdd",
-                      layer="metal1",
-                      offset=self.vdd_position,
-                      width=rail_width,
-                      height=rail_height)
+                            layer="metal1",
+                            offset=self.vdd_position,
+                            width=rail_width,
+                            height=rail_height)
 
     def add_ptx(self):
         """Adds pmos and nmos to the layout"""
@@ -294,10 +293,9 @@ class pinv(design.design):
                       width=self.poly_contact.first_layer_position.y + drc["minwidth_poly"],
                       height=self.poly_contact.first_layer_width)
 
-        input_length = self.pmos.poly_positions[0].x \
-                       - self.poly_contact.height
+        input_length = self.pmos.poly_positions[0].x - self.poly_contact.height
         # Determine the y-coordinate for the placement of the metal1 via
-        self.input_position = vector(0, .5*(self.height - drc["minwidth_metal1"] 
+        self.input_position = vector(0, 0.5*(self.height - drc["minwidth_metal1"] 
                                             + self.nmos.height - self.pmos.height))
         self.add_layout_pin(text="A",
                       layer="metal1",
@@ -313,16 +311,18 @@ class pinv(design.design):
                         self.input_position.y)
         output_length = self.width - offset.x
         if self.route_output == True:
-            self.output_position = offset + vector(output_length,0)
-            self.add_rect(layer="metal1",
-                          offset=offset,
-                          width=output_length,
-                          height=drc["minwidth_metal1"])
+            # This extends the output to the edge of the cell
+            self.add_layout_pin(text="Z",
+                                layer="metal1",
+                                offset=offset,
+                                width=output_length,
+                                height=drc["minwidth_metal1"])
         else:
-            self.output_position = offset
-        self.add_label(text="Z",
-                       layer="metal1",
-                       offset=offset)
+            # This leaves the output as an internal pin (min sized)
+            self.add_layout_pin(text="Z",
+                                layer="metal1",
+                                offset=offset)
+
 
     def add_well_contacts(self):
         """Adds n/p well taps to the layout"""
@@ -333,14 +333,14 @@ class pinv(design.design):
                                          - self.nwell_contact.width,
                                      self.pmos.active_contact_positions[0].y)
         self.nwell_contact_position = self.pmos_position + well_contact_offset
-        self.nwell_contact=self.add_contact(layer_stack,self.nwell_contact_position,(1,self.pmos.num_of_tacts))
+        self.nwell_contact=self.add_contact(layer_stack,self.nwell_contact_position,(1,self.pmos.num_contacts))
 
         well_contact_offset = vector(self.nmos.active_position.x 
                                                + self.active_width 
                                                - self.pwell_contact.width,
                                      self.nmos.active_contact_positions[0].y)
         self.pwell_contact_position = self.nmos_position + well_contact_offset
-        self.pwell_contact=self.add_contact(layer_stack,self.pwell_contact_position,(1,self.nmos.num_of_tacts))
+        self.pwell_contact=self.add_contact(layer_stack,self.pwell_contact_position,(1,self.nmos.num_contacts))
 
     def connect_well_contacts(self):
         """Connects the well taps to its respective power rails"""
@@ -403,15 +403,11 @@ class pinv(design.design):
         self.route_input_gate()
         self.route_output_drain()
 
-    def setup_layout_offsets(self):
-        self.A_position = self.input_position
-        self.Z_position = self.output_position
-
     def input_load(self):
         return ((self.nmos_size+self.pmos_size)/parameter["min_tx_size"])*spice["min_tx_gate_c"]
 
-    def delay(self, slope, load=0.0):
+    def analytical_delay(self, slew, load=0.0):
         from tech import spice
         r = spice["min_tx_r"]/(self.nmos_size/parameter["min_tx_size"])
-        c_para = spice["min_tx_c_para"]*(self.nmos_size/parameter["min_tx_size"])#ff
-        return self.cal_delay_with_rc(r = r, c =  c_para+load, slope =slope)
+        c_para = spice["min_tx_drain_c"]*(self.nmos_size/parameter["min_tx_size"])#ff
+        return self.cal_delay_with_rc(r = r, c =  c_para+load, slew = slew)

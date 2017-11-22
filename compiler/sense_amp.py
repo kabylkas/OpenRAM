@@ -11,20 +11,22 @@ class sense_amp(design.design):
     Sense amplifier to read a pair of bit-lines.
     """
 
-    pins = ["BL", "BR", "Dout", "SCLK", "vdd", "gnd"]
-    chars = utils.auto_measure_libcell(pins, "sense_amp", GDS["unit"], layer["boundary"])
+    pin_names = ["bl", "br", "dout", "en", "vdd", "gnd"]
+    (width,height) = utils.get_libcell_size("sense_amp", GDS["unit"], layer["boundary"])
+    pin_map = utils.get_libcell_pins(pin_names, "sense_amp", GDS["unit"], layer["boundary"])
 
     def __init__(self, name):
         design.design.__init__(self, name)
-        debug.info(2, "Create Sense Amp object")
+        debug.info(2, "Create sense_amp")
 
-        self.width = sense_amp.chars["width"]
-        self.height = sense_amp.chars["height"]
+        self.width = sense_amp.width
+        self.height = sense_amp.height
+        self.pin_map = sense_amp.pin_map
 
-    def delay(self, slope, load=0.0):
+    def analytical_delay(self, slew, load=0.0):
         from tech import spice
         r = spice["min_tx_r"]/(10)
-        c_para = spice["min_tx_c_para"]#ff
-        result = self.cal_delay_with_rc(r = r, c =  c_para+load, slope =slope)
-        return self.return_delay(result.delay , result.slope)
+        c_para = spice["min_tx_drain_c"]
+        result = self.cal_delay_with_rc(r = r, c =  c_para+load, slew = slew)
+        return self.return_delay(result.delay, result.slew)
 

@@ -18,10 +18,8 @@ class options(optparse.Values):
     debug_level = 0
     # This determines whether  LVS and DRC is checked for each submodule.
     check_lvsdrc = True
-    # Variable to select the variant of spice (hspice or ngspice right now)
-    spice_version = "hspice"
-    # Should we fall back if we can't find our preferred spice?
-    force_spice = False
+    # Variable to select the variant of spice
+    spice_version = ""
     # Should we print out the banner at startup
     print_banner = True
     # The Calibre executable being used which is derived from the user PATH.
@@ -30,10 +28,11 @@ class options(optparse.Values):
     spice_exe = ""
     # Run with extracted parasitics
     use_pex = False
-    # Trim noncritical memory cells for simulation speed-up
-    trim_noncritical = False
+    # Remove noncritical memory cells for characterization speed-up
+    trim_netlist = True
     # Define the output file paths
-    out_path = ""
+    output_path = ""
     # Define the output file base name
-    out_name = ""
-    analytical_delay = False
+    output_name = ""
+    # Use analytical delay models by default rather than (slow) characterization
+    analytical_delay = True

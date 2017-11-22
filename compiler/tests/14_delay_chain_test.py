@@ -1,6 +1,6 @@
 #!/usr/bin/env python2.7
 """
-Run a regresion test on a control_logic
+Run a test on a delay chain
 """
 
 import unittest
@@ -13,22 +13,23 @@ import calibre
 
 OPTS = globals.get_opts()
 
+#@unittest.skip("SKIPPING 14_delay_chain_test")
 
-class control_logic_test(unittest.TestCase):
+
+class delay_chain_test(unittest.TestCase):
 
     def runTest(self):
         globals.init_openram("config_20_{0}".format(OPTS.tech_name))
         # we will manually run lvs/drc
         OPTS.check_lvsdrc = False
 
-        import control_logic
-        import tech
+        import delay_chain
 
-        debug.info(1, "Testing sample for control_logic")
-        a = control_logic.control_logic(num_rows=128)
-        OPTS.check_lvsdrc = True
+        debug.info(2, "Testing delay_chain")
+        a = delay_chain.delay_chain(fanout_list=[4, 4, 4, 4])
         self.local_check(a)
 
+        OPTS.check_lvsdrc = True
         globals.end_openram()
         
     def local_check(self, a):
@@ -44,8 +45,7 @@ class control_logic_test(unittest.TestCase):
         os.remove(tempspice)
         os.remove(tempgds)
 
-
-# instantiate a copdsay of the class to actually run the test
+# instantiate a copy of the class to actually run the test
 if __name__ == "__main__":
     (OPTS, args) = globals.parse_args()
     del sys.argv[1:]

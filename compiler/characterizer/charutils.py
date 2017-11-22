@@ -4,46 +4,49 @@ import debug
 
 OPTS = globals.get_opts()
 
-# 0.1% is the relative tolerance for convergence
-error_tolerance = 0.001 
-
-# times are in ns, so this is how many digits of precision
-# 3 digits = 1ps
-# 4 digits = 0.1ps
-# etc.
-time_precision = 3
-# voltages are in volts
-# 3 digits = 1mv
-# 4 digits = 0.1mv
-# 5 digits = 0.01mv
-# 6 digits = 1uv
-# etc
-voltage_precision = 5
         
-def relative_compare(value1,value2):
+def relative_compare(value1,value2,error_tolerance=0.001):
     """ This is used to compare relative values for convergence. """
     return (abs(value1 - value2) / max(value1,value2) <= error_tolerance)
 
 
 def parse_output(filename, key):
     """Parses a hspice output.lis file for a key value"""
-    full_filename="{0}{1}.lis".format(OPTS.openram_temp, filename)
+    if OPTS.spice_version == "xa" :
+        # customsim has a different output file name
+        full_filename="{0}xa.meas".format(OPTS.openram_temp)
+    else:
+        # ngspice/hspice using a .lis file
+        full_filename="{0}{1}.lis".format(OPTS.openram_temp, filename)
+
     try:
         f = open(full_filename, "r")
     except IOError:
         debug.error("Unable to open spice output file: {0}".format(full_filename),1)
     contents = f.read()
-    val = re.search(r"{0}\s*=\s*(-?\d+.?\d*\S*)\s+.*".format(key), contents)
+    # val = re.search(r"{0}\s*=\s*(-?\d+.?\d*\S*)\s+.*".format(key), contents)
+    val = re.search(r"{0}\s*=\s*(-?\d+.?\d*[e]?[-+]?[0-9]*\S*)\s+.*".format(key), contents)
+    
     if val != None:
         debug.info(3, "Key = " + key + " Val = " + val.group(1))
         return val.group(1)
     else:
         return "Failed"
     
-def round_time(time):
+def round_time(time,time_precision=3):
+    # times are in ns, so this is how many digits of precision
+    # 3 digits = 1ps
+    # 4 digits = 0.1ps
+    # etc.
     return round(time,time_precision)
 
-def round_voltage(voltage):
+def round_voltage(voltage,voltag_precision=5):
+    # voltages are in volts
+    # 3 digits = 1mv
+    # 4 digits = 0.1mv
+    # 5 digits = 0.01mv
+    # 6 digits = 1uv
+    # etc
     return round(voltage,voltage_precision)
 
 def convert_to_float(number):

@@ -23,7 +23,7 @@ class timing_sram_test(unittest.TestCase):
         # we will manually run lvs/drc
         OPTS.check_lvsdrc = False
         OPTS.spice_version="hspice"
-        OPTS.force_spice = True
+        OPTS.analytical_delay = False
         globals.set_spice()
         
         import sram
@@ -32,7 +32,7 @@ class timing_sram_test(unittest.TestCase):
         s = sram.sram(word_size=OPTS.config.word_size,
                       num_words=OPTS.config.num_words,
                       num_banks=OPTS.config.num_banks,
-                      name="test_sram1")
+                      name="sram1")
 
         OPTS.check_lvsdrc = True
 
@@ -46,20 +46,49 @@ class timing_sram_test(unittest.TestCase):
         debug.info(1, "Probe address {0} probe data {1}".format(probe_address, probe_data))
 
         d = delay.delay(s,tempspice)
-        data = d.analyze(probe_address, probe_data)
+        import tech
+        loads = [tech.spice["FF_in_cap"]*4]
+        slews = [tech.spice["rise_time"]*2]
+        data = d.analyze(probe_address, probe_data,slews,loads)
 
         if OPTS.tech_name == "freepdk45":
-            self.assertTrue(isclose(data['delay1'],0.013649))
-            self.assertTrue(isclose(data['delay0'],0.22893))
-            self.assertTrue(isclose(data['min_period1'],0.078582763671875))
-            self.assertTrue(isclose(data['min_period0'],0.25543212890625))
+            golden_data = {'read1_power': 0.025833000000000002,
+                           'read0_power': 0.026039,
+                           'write0_power': 0.024105,
+                           'delay1': [0.047506],
+                           'delay0': [0.13799999999999998],
+                           'min_period': 0.322,
+                           'write1_power': 0.024214,
+                           'slew0': [0.026966],
+                           'slew1': [0.019338]}
         elif OPTS.tech_name == "scn3me_subm":
-            self.assertTrue(isclose(data['delay1'],1.5335))
-            self.assertTrue(isclose(data['delay0'],2.2635000000000005))
-            self.assertTrue(isclose(data['min_period1'],1.53564453125))
-            self.assertTrue(isclose(data['min_period0'],2.998046875))
+            golden_data = {'read1_power': 3.1765,
+                           'read0_power': 3.1929,
+                           'write0_power': 2.874,
+                           'delay1': [0.8900045999999999],
+                           'delay0': [1.9975000000000003],
+                           'min_period': 5.781,
+                           'write1_power': 2.6611,
+                           'slew0': [1.2993000000000001],
+                           'slew1': [0.9903856]}
         else:
             self.assertTrue(False) # other techs fail
+        # Check if no too many or too few results
+        self.assertTrue(len(data.keys())==len(golden_data.keys()))
+        # Check each result
+        for k in data.keys():
+            if type(data[k])==list:
+                for i in range(len(data[k])):
+                    self.assertTrue(isclose(data[k][i],golden_data[k][i]))
+            else:
+                self.assertTrue(isclose(data[k],golden_data[k]))
+
+                
+        # reset these options
+        OPTS.check_lvsdrc = True
+        OPTS.spice_version="hspice"
+        OPTS.analytical_delay = True
+        globals.set_spice()
 
         os.remove(tempspice)
 

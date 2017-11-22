@@ -3,20 +3,34 @@ import debug
 from tech import drc, info, spice
 from vector import vector
 from contact import contact
+import path
+import re
 
 class ptx(design.design):
     """
     This module generates gds and spice of a parametrically NMOS or PMOS sized transistor. 
-    Creates a simple MOS transistor
+    Creates a simple MOS transistor. poly_positions are the ll of the poly gate. active_contact_positions
+    is an array of the positions of the ll of active contacts (left to right)
     """
-    def __init__(self, width=1, mults=1, tx_type="nmos"):
+    def __init__(self, width=drc["minwidth_tx"], mults=1, tx_type="nmos", connect_active=False, connect_poly=False, num_contacts=None):
         name = "{0}_m{1}_w{2}".format(tx_type, mults, width)
+        if connect_active:
+            name += "_a"
+        if connect_poly:
+            name += "_p"
+        if num_contacts:
+            name += "_c{}".format(num_contacts)
+        name=re.sub('\.','_',name) # remove periods for newer spice compatibility
+
         design.design.__init__(self, name)
         debug.info(3, "create ptx structure {0}".format(name))
 
         self.tx_type = tx_type
         self.mults = mults
         self.gate_width = width
+        self.connect_active = connect_active
+        self.connect_poly = connect_poly
+        self.num_contacts = num_contacts
 
         self.add_pins()
         self.create_layout()
@@ -30,26 +44,61 @@ class ptx(design.design):
     def create_layout(self):
         self.setup_layout_constants()
 
+        if self.num_contacts==None:
+            self.num_contacts=self.calculate_num_contacts()
+        
         # This is not actually instantiated but used for calculations
-        self.num_of_tacts = self.calculate_num_of_tacts()
         self.active_contact = contact(layer_stack=("active", "contact", "metal1"),
-                                      dimensions=(1, self.num_of_tacts))
+                                      dimensions=(1, self.num_contacts))
         
         self.add_active()
         self.add_implants()  
         self.add_poly()
         self.add_active_contacts()
-        # rather than connect these, we let the user of the ptx
-        # decide to call them. 
-        # self.determine_active_wire_location()
-        # self.connect_fingered_active()
-        # self.connect_fingered_poly()
-        self.offset_all_coordinates()
 
+        # offset this BEFORE we add the active/poly connections
+        self.offset_all_coordinates()
+        
+        if self.connect_active:
+            self.connect_fingered_active()
+        if self.connect_poly:
+            self.connect_fingered_poly()
+
+    def offset_attributes(self, coordinate):
+        """Translates all stored 2d cartesian coordinates within the
+        attr dictionary"""
+        # FIXME: This is dangerous. I think we should not do this, but explicitly
+        # offset the necessary coordinates. It is only used in ptx for now!
+
+        for attr_key in dir(self):
+            attr_val = getattr(self,attr_key)
+
+            # skip the list of things as these will be offset separately
+            if (attr_key in ['objs','insts','mods','pins','conns','name_map']): continue
+
+            # if is a list
+            if isinstance(attr_val, list):
+                
+                for i in range(len(attr_val)):
+                    # each unit in the list is a list coordinates
+                    if isinstance(attr_val[i], (list,vector)):
+                        attr_val[i] = vector(attr_val[i] - coordinate)
+                    # the list itself is a coordinate
+                    else:
+                        if len(attr_val)!=2: continue
+                        for val in attr_val:
+                            if not isinstance(val, (int, long, float)): continue
+                        setattr(self,attr_key, vector(attr_val - coordinate))
+                        break
+
+            # if is a vector coordinate
+            if isinstance(attr_val, vector):
+                setattr(self, attr_key, vector(attr_val - coordinate))
+        
     def offset_all_coordinates(self):
-        coordinate = self.find_lowest_coords()
-        self.offset_attributes(coordinate)
-        self.translate(coordinate)
+        offset = self.find_lowest_coords()
+        self.offset_attributes(offset)
+        self.translate_all(offset)
 
         # We can do this in ptx because we have offset all modules it uses.
         # Is this really true considering the paths that connect the src/drain?
@@ -92,16 +141,22 @@ class ptx(design.design):
         self.well_height = max(self.gate_width + 2 * (drc["well_enclosure_active"]),
                                drc["minwidth_well"])
 
+
     def connect_fingered_poly(self):
         poly_connect_length = self.poly_positions[-1].x + self.poly_width \
                               - self.poly_positions[0].x
         poly_connect_position = self.poly_positions[0] - vector(0, self.poly_width)
         if len(self.poly_positions) > 1:
-            self.add_rect(layer="poly",
-                           offset=poly_connect_position,
-                           width=poly_connect_length,
-                           height=drc["minwidth_poly"])
+            self.remove_layout_pin("G") # only keep the main pin
+            self.add_layout_pin(text="G",
+                                layer="poly",
+                                offset=poly_connect_position,
+                                width=poly_connect_length,
+                                height=drc["minwidth_poly"])
+
             self.poly_connect_index = len(self.objs) - 1
+
+            
 
     def pairwise(self, iterable):
         #"s -> (s0,s1), (s1,s2), (s2, s3), ..."
@@ -151,13 +206,29 @@ class ptx(design.design):
         # allows one to connect the source and drains
         self.source_connect_index = None
         if self.source_positions:
+            self.remove_layout_pin("S") # remove the individual connections
+            self.source_positions = path.create_rectilinear_route(self.source_positions)
             self.add_path(("metal1"), self.source_positions)
+            # The source positions are odd since the second one is always redundant
+            # so we must use the THIRD one
+            self.add_center_layout_pin(text="S",
+                                       layer="metal1",
+                                       start=self.source_positions[2]-vector(0.5*drc["minwidth_metal1"],0),
+                                       end=self.source_positions[-2]+vector(0.5*drc["minwidth_metal1"],0))
             self.source_connect_index = len(self.insts) - 1
         self.drain_connect_index = None
         if self.drain_positions:
+            self.remove_layout_pin("D") # remove the individual connections
+            self.drain_positions = path.create_rectilinear_route(self.drain_positions)
             self.add_path(("metal1"), self.drain_positions)
+            # The source positions are odd since the second one is always redundant            
+            # so we must use the THIRD one
+            self.add_center_layout_pin(text="D",
+                                       layer="metal1",
+                                       start=self.drain_positions[2]-vector(0.5*drc["minwidth_metal1"],0),
+                                       end=self.drain_positions[-2]+vector(0.5*drc["minwidth_metal1"],0))
             self.drain_connect_index = len(self.insts) - 1
-
+            
     def add_poly(self):
         # left_most poly
         poly_xoffset = self.active_contact.via_layer_position.x \
@@ -166,10 +237,18 @@ class ptx(design.design):
         self.poly_positions = []
         # following poly(s)
         for i in range(0, self.mults):
-            self.add_rect(layer="poly",
-                          offset=[poly_xoffset, poly_yoffset],
-                          width=self.poly_width,
-                          height=self.poly_height)
+            if self.connect_poly:
+                # Add the rectangle in case we remove the pin when joining fingers
+                self.add_rect(layer="poly",
+                              offset=[poly_xoffset, poly_yoffset],
+                              width=self.poly_width,
+                              height=self.poly_height)
+            else:
+                self.add_layout_pin(text="G",
+                                    layer="poly",
+                                    offset=[poly_xoffset, poly_yoffset],
+                                    width=self.poly_width,
+                                    height=self.poly_height)
             self.poly_positions.append(vector(poly_xoffset, poly_yoffset))
             poly_xoffset += self.mults_poly_to_poly + drc["minwidth_poly"]
 
@@ -223,14 +302,13 @@ class ptx(design.design):
                       width=xlength,
                       height=ylength)
 
-    def calculate_num_of_tacts(self):
+    def calculate_num_contacts(self):
         """ Calculates the possible number of source/drain contacts in a column """
-        possible_length = self.active_height \
-                          - 2 * drc["active_extend_contact"]
+        # Used for over-riding the contact dimensions
+        possible_length = self.active_height - 2 * drc["active_extend_contact"]
         y = 1
         while True:
-            temp_length = (y * drc["minwidth_contact"]) \
-                          + ((y - 1) * drc["contact_to_contact"])
+            temp_length = (y * drc["minwidth_contact"]) + ((y - 1) * drc["contact_to_contact"])
             if round(possible_length - temp_length, 6) < 0:
                 return y - 1
             y += 1
@@ -240,12 +318,24 @@ class ptx(design.design):
 
         # left_most contact column
         contact_xoffset = 0
-        contact_yoffset = (self.active_height \
-                           - self.active_contact.height) / 2
+        contact_yoffset = (self.active_height - self.active_contact.height) / 2
         offset = vector(contact_xoffset, contact_yoffset)
-        self.add_contact(layers=("active", "contact", "metal1"),
-                         offset=offset,
-                         size=(1, self.num_of_tacts))
+        contact=self.add_contact(layers=("active", "contact", "metal1"),
+                                 offset=offset,
+                                 size=(1, self.num_contacts))
+        # source are even
+        if self.connect_active:
+            # Add this in case the pins get removed when fingers joined
+            self.add_rect(layer="metal1",
+                          offset=offset+contact.second_layer_position,
+                          width=contact.second_layer_width,
+                          height=contact.second_layer_height)
+        else:
+            self.add_layout_pin(text="S",
+                                layer="metal1",
+                                offset=offset+contact.second_layer_position,
+                                width=contact.second_layer_width,
+                                height=contact.second_layer_height)
         self.active_contact_positions.append(offset)
 
         # middle contact columns
@@ -255,9 +345,23 @@ class ptx(design.design):
                               - (drc["minwidth_contact"] / 2) - \
                               self.active_contact.via_layer_position.x
             offset = vector(contact_xoffset, contact_yoffset)
-            self.add_contact(layers=("active", "contact", "metal1"),
-                             offset=offset,
-                             size=(1, self.num_of_tacts))
+            contact=self.add_contact(layers=("active", "contact", "metal1"),
+                                     offset=offset,
+                                     size=(1, self.num_contacts))
+            # source are even, drain are odd
+            if self.connect_active:
+                # Add this in case the pins get removed when fingers joined
+                self.add_rect(layer="metal1",
+                              offset=offset+contact.second_layer_position,
+                              width=contact.second_layer_width,
+                              height=contact.second_layer_height)
+            else:
+                name = "S" if i%2==1 else "D"
+                self.add_layout_pin(text=name,
+                                    layer="metal1",
+                                    offset=offset+contact.second_layer_position,
+                                    width=contact.second_layer_width,
+                                    height=contact.second_layer_height)
 
             self.active_contact_positions.append(offset)
 
@@ -266,42 +370,58 @@ class ptx(design.design):
                           + self.poly_width + drc["contact_to_poly"] - \
                           self.active_contact.via_layer_position.x
         offset = vector(contact_xoffset, contact_yoffset)
-        self.add_contact(layers=("active", "contact", "metal1"),
-                         offset=offset,
-                         size=(1, self.num_of_tacts))
+        contact=self.add_contact(layers=("active", "contact", "metal1"),
+                                 offset=offset,
+                                 size=(1, self.num_contacts))
+        # source are even, drain are odd
+        if self.connect_active:
+            self.add_rect(layer="metal1",
+                          offset=offset+contact.second_layer_position,
+                          width=contact.second_layer_width,
+                          height=contact.second_layer_height)
+        else:
+            name = "D" if self.mults%2==1 else "S" 
+            self.add_layout_pin(text=name,
+                                layer="metal1",
+                                offset=offset+contact.second_layer_position,
+                                width=contact.second_layer_width,
+                                height=contact.second_layer_height)
+        # Add this in case the pins get removed when fingers joined
         self.active_contact_positions.append(offset)
 
 
-    def remove_drain_connect(self):
-        # FIXME: This is horrible exception handling!
-        try:
-            del self.insts[self.drain_connect_index]
-            del self.drain_connect_index
-            self.offset_all_coordinates()
-            # change the name so it is unique
-            self.name = self.name + "_rd"
-        except:
-            pass
+    # def remove_drain_connect(self):
+    #     debug.info(3,"Removing drain on {}".format(self.name))
+    #     # FIXME: This is horrible exception handling!
+    #     try:
+    #         del self.insts[self.drain_connect_index]
+    #         del self.drain_connect_index
+    #         self.offset_all_coordinates()
+    #         # change the name so it is unique
+    #         self.name = self.name + "_rd"
+    #     except:
+    #         pass
 
-    def remove_source_connect(self):
-        # FIXME: This is horrible exception handling!
-        try:
-            del self.insts[self.source_connect_index]
-            del self.source_connect_index
-            if isinstance(self.drain_connect_index, int):
-                self.drain_connect_index -= 1
-            self.offset_all_coordinates()
-            # change the name so it is unique
-            self.name = self.name + "_rs"
-        except:
-            pass
+    # def remove_source_connect(self):
+    #     debug.info(3,"Removing source on {}".format(self.name))
+    #     # FIXME: This is horrible exception handling!
+    #     try:
+    #         del self.insts[self.source_connect_index]
+    #         del self.source_connect_index
+    #         if isinstance(self.drain_connect_index, int):
+    #             self.drain_connect_index -= 1
+    #         self.offset_all_coordinates()
+    #         # change the name so it is unique
+    #         self.name = self.name + "_rs"
+    #     except:
+    #         pass
 
-    def remove_poly_connect(self):
-        # FIXME: This is horrible exception handling!
-        try:
-            del self.objs[self.poly_connect_index]
-            self.offset_all_coordinates()
-            # change the name so it is unique
-            self.name = self.name + "_rp"
-        except:
-            pass
+    # def remove_poly_connect(self):
+    #     # FIXME: This is horrible exception handling!
+    #     try:
+    #         del self.objs[self.poly_connect_index]
+    #         self.offset_all_coordinates()
+    #         # change the name so it is unique
+    #         self.name = self.name + "_rp"
+    #     except:
+    #         pass

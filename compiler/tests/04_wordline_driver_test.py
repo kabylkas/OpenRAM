@@ -28,12 +28,12 @@ class wordline_driver_test(unittest.TestCase):
         import tech
 
         debug.info(2, "Checking driver")
-        tx = wordline_driver.wordline_driver(name="Wordline_driver", rows=8)
+        tx = wordline_driver.wordline_driver(rows=8)
+        self.local_check(tx)
 
         OPTS.check_lvsdrc = True
-
-        self.local_check(tx)
         globals.end_openram()
+        
     def local_check(self, tx):
         tempspice = OPTS.openram_temp + "temp.sp"
         tempgds = OPTS.openram_temp + "temp.gds"
@@ -51,5 +51,6 @@ class wordline_driver_test(unittest.TestCase):
 # instantiate a copy of the class to actually run the test
 if __name__ == "__main__":
     (OPTS, args) = globals.parse_args()
+    del sys.argv[1:]
     header(__file__, OPTS.tech_name)
     unittest.main()

@@ -24,7 +24,7 @@ class ecc(design.design):
 
         c = reload(__import__(OPTS.config.xor_2))
         self.mod_xor_2 = getattr(c, OPTS.config.xor_2)
-        self.xor_2_chars = self.mod_xor_2.chars
+        self.xor_2_pin_map = self.mod_xor_2.pin_map
 
         self.word_size = word_size
         self.parity_num = int(math.floor(math.log(word_size,2)))+1;
@@ -53,13 +53,13 @@ class ecc(design.design):
         self.create_nand_2()
         self.setup_layout_constants()
         self.add_parity_generator()
-        self.route_parity_generator()
-        self.add_syndrome_generator()
+        #self.route_parity_generator()
+        #self.add_syndrome_generator()
         #self.route_syndrom_generator()
-        self.add_syndrome_to_locator_bus()
-        self.route_syndrome_to_bus()
-        self.add_locator()
-        self.route_bus_to_locator()
+        #self.add_syndrome_to_locator_bus()
+        #self.route_syndrome_to_bus()
+        #self.add_locator()
+        #self.route_bus_to_locator()
         #self.create_pinv()
 
     def create_xor_2(self):
@@ -114,6 +114,8 @@ class ecc(design.design):
 
         for parity_i in range(self.parity_num):
             #calculate number of inputs for the current parity
+            #refer to: http://blog.kabylkas.kz/2017/11/18/implementing-error-detecting-and-correcting-code-in-ram-how-is-it-implemented/
+            #the blog post shows how number of inputs is calculated
             two_to_parity_i = int(math.pow(2, parity_i))
             check = True
             input_num = 0
@@ -128,9 +130,12 @@ class ecc(design.design):
 
             #subtract 1 from the calculated input number
             input_num = input_num - 1
-
-            #xor2 gate number is equal two input number - 1
+            #number of xor2 gates=input number - 1
             gate_num = input_num-1
+            #The design choice was made to split the gates in half
+            #and stack them. This allows easy routing.
+            #refer to: 
+            #the blog post discusses the details of this design choice
             gate_num_half = int(math.floor(gate_num/2))
             for i in range(gate_num):
                 name = "parity_xor2_{0}_{1}".format(parity_i, i)
@@ -148,7 +153,7 @@ class ecc(design.design):
                 out_flip_offset = vector(0,0)
                 if direction == "MX":
                     xor_2_h = self.xor_2.height
-                    ab_y_distance = self.xor_2_chars["a"][1]-self.xor_2_chars["b"][1]
+                    ab_y_distance = self.xor_2_pin_map["a"][1]-self.xor_2_pin_map["b"][1]
                     #a
                     a_y = xor_2_h+ab_y_distance
                     a_flip_offset = vector(0,a_y)
@@ -156,19 +161,13 @@ class ecc(design.design):
                     b_y = xor_2_h-ab_y_distance
                     b_flip_offset = vector(0, b_y)
                     #out
-                    out_y = xor_2_h-(xor_2_h-2*self.xor_2_chars["out"][1])
+                    out_y = xor_2_h-(xor_2_h-2*self.xor_2_pin_map["out"][1])
                     out_flip_offset = vector(0, out_y)
 
                 xor_2_position = vector(xoffset, yoffset)
-                a_offset = xor_2_position+\
-                           vector(self.xor_2_chars["a"][0], self.xor_2_chars["a"][1])-\
-                           a_flip_offset
-                b_offset = xor_2_position+\
-                           vector(self.xor_2_chars["b"][0], self.xor_2_chars["b"][1])-\
-                           b_flip_offset
-                out_offset = xor_2_position+\
-                             vector(self.xor_2_chars["out"][0], self.xor_2_chars["out"][1])-\
-                             out_flip_offset
+                a_offset = xor_2_position+self.xor_2_pin_map["a"][0].center()-a_flip_offset
+                b_offset = xor_2_position+self.xor_2_pin_map["b"][0].center()-b_flip_offset
+                out_offset = xor_2_position+self.xor_2_pin_map["out"][0].center()-out_flip_offset
 
                 #add current xor2 to the design
                 self.add_inst(name = name, 
@@ -300,7 +299,7 @@ class ecc(design.design):
             out_flip_offset = vector(0,0)
             direction = "MX"
             xor_2_h = self.xor_2.height
-            ab_y_distance = self.xor_2_chars["a"][1]-self.xor_2_chars["b"][1]
+            ab_y_distance = self.xor_2_pin_map["a"][1]-self.xor_2_pin_map["b"][1]
             #a label
             a_y = xor_2_h+ab_y_distance
             a_flip_offset = vector(0,a_y)
@@ -308,17 +307,17 @@ class ecc(design.design):
             b_y = xor_2_h-ab_y_distance
             b_flip_offset = vector(0, b_y)
             #out label
-            out_y = xor_2_h-(xor_2_h-2*self.xor_2_chars["out"][1])
+            out_y = xor_2_h-(xor_2_h-2*self.xor_2_pin_map["out"][1])
             out_flip_offset = vector(0, out_y)
 
             a_offset = xor_2_position+\
-                       vector(self.xor_2_chars["a"][0], self.xor_2_chars["a"][1])-\
+                       vector(self.xor_2_pin_map["a"][0], self.xor_2_pin_map["a"][1])-\
                        a_flip_offset
             b_offset = xor_2_position+\
-                       vector(self.xor_2_chars["b"][0], self.xor_2_chars["b"][1])-\
+                       vector(self.xor_2_pin_map["b"][0], self.xor_2_pin_map["b"][1])-\
                        b_flip_offset
             out_offset = xor_2_position+\
-                         vector(self.xor_2_chars["out"][0], self.xor_2_chars["out"][1])-\
+                         vector(self.xor_2_pin_map["out"][0], self.xor_2_pin_map["out"][1])-\
                          out_flip_offset
 
             #add current xor2 to the design

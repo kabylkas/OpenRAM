@@ -76,6 +76,52 @@ class ecc(design.design):
                          beta=tech.parameter["pinv_beta"])
         self.add_mod(self.pinv)
 
+    def mirror_xor_2(self):
+        direction="MX"
+        self.xor_2_direction = direction
+        self.xor_2_pin_map["a"][0].transform(0, direction, 0)
+        self.xor_2_pin_map["b"][0].transform(0, direction, 0)
+        self.xor_2_pin_map["out"][0].transform(0, direction, 0)
+        return self.get_xor_2_pin_pos()
+        
+    def get_xor_2_pin_pos(self):
+        a_pos = self.xor_2_pin_map["a"][0].center()
+        b_pos = self.xor_2_pin_map["b"][0].center()
+        out_pos = self.xor_2_pin_map["out"][0].center()
+        return a_pos, b_pos, out_pos
+        
+    def add_to_design(self, parity_i, i, xor_2_position, a_offset, b_offset, out_offset):
+        #add current xor2 to the design
+        name = "parity_xor2_{0}_{1}".format(parity_i, i)
+
+        self.add_inst(name = name, 
+                      mod = self.xor_2,
+                      offset = xor_2_position,
+                      mirror = self.xor_2_direction)
+
+        self.xor_2_positions.append(xor_2_position)
+
+        #add labels
+        self.add_label(text = "a_{0}_{1}".format(parity_i, i),
+                       layer = "metal2",
+                       offset = a_offset)
+        self.add_label(text = "b_{0}_{1}".format(parity_i, i),
+                       layer = "metal2",
+                       offset = b_offset)
+        self.add_label(text = "out_{0}_{1}".format(parity_i, i),
+                       layer = "metal2",
+                       offset = out_offset)
+
+        self.add_pin("a_{0}_{1}".format(parity_i, i))
+        self.add_pin("b_{0}_{1}".format(parity_i, i))
+        self.add_pin("out_{0}_{1}".format(parity_i, i))
+        #connect
+        self.connect_inst(["a_{0}_{1}".format(parity_i, i),
+                           "b_{0}_{1}".format(parity_i, i),
+                           "out_{0}_{1}".format(parity_i, i),
+                           "vdd",
+                           "gnd"])
+        
     def setup_layout_constants(self):
         #layout offsets
         self.syndrome_gen_height = self.xor_2.height
@@ -91,6 +137,7 @@ class ecc(design.design):
 
         #module widths
         self.parity_gen_width = 0 #calculated after layout
+        self.xor_2_direction = "R0"
         #reset lists
         self.vdd_positions = []
         self.gnd_positions = []
@@ -112,6 +159,9 @@ class ecc(design.design):
         global_xoffset = 0
         global_yoffset = self.current_global_yoffset
 
+        a_pos, b_pos, out_pos = self.get_xor_2_pin_pos()
+
+        #start laying out
         for parity_i in range(self.parity_num):
             #calculate number of inputs for the current parity
             #refer to: http://blog.kabylkas.kz/2017/11/18/implementing-error-detecting-and-correcting-code-in-ram-how-is-it-implemented/
@@ -137,66 +187,31 @@ class ecc(design.design):
             #refer to: 
             #the blog post discusses the details of this design choice
             gate_num_half = int(math.floor(gate_num/2))
+            self.xor_2_direction="R0"
             for i in range(gate_num):
-                name = "parity_xor2_{0}_{1}".format(parity_i, i)
                 if i<gate_num_half:
-                    direction = "R0"
                     xoffset = global_xoffset + i*self.xor_2.width
                     yoffset = global_yoffset
                 else:
-                    direction = "MX"
                     xoffset = global_xoffset + (i-gate_num_half)*self.xor_2.width
                     yoffset = global_yoffset + 2*self.xor_2.height
 
-                a_flip_offset = vector(0,0)
-                b_flip_offset = vector(0,0)
-                out_flip_offset = vector(0,0)
-                if direction == "MX":
-                    xor_2_h = self.xor_2.height
-                    ab_y_distance = self.xor_2_pin_map["a"][1]-self.xor_2_pin_map["b"][1]
-                    #a
-                    a_y = xor_2_h+ab_y_distance
-                    a_flip_offset = vector(0,a_y)
-                    #b
-                    b_y = xor_2_h-ab_y_distance
-                    b_flip_offset = vector(0, b_y)
-                    #out
-                    out_y = xor_2_h-(xor_2_h-2*self.xor_2_pin_map["out"][1])
-                    out_flip_offset = vector(0, out_y)
+                #mirror the pins as we pass to the second half of gate 
+                if i==gate_num_half:
+                    #mirror and update pin positions
+                    a_pos, b_pos, out_pos = self.mirror_xor_2()
 
+                #calculate position for the current gate
                 xor_2_position = vector(xoffset, yoffset)
-                a_offset = xor_2_position+self.xor_2_pin_map["a"][0].center()-a_flip_offset
-                b_offset = xor_2_position+self.xor_2_pin_map["b"][0].center()-b_flip_offset
-                out_offset = xor_2_position+self.xor_2_pin_map["out"][0].center()-out_flip_offset
+                a_offset = xor_2_position+a_pos
+                b_offset = xor_2_position+b_pos
+                out_offset = xor_2_position+out_pos
 
-                #add current xor2 to the design
-                self.add_inst(name = name, 
-                              mod = self.xor_2,
-                              offset = xor_2_position,
-                              mirror = direction)
-
-                self.xor_2_positions.append(xor_2_position)
-
-                #add labels
-                self.add_label(text = "a_{0}_{1}".format(parity_i, i),
-                               layer = "metal2",
-                               offset = a_offset)
-                self.add_label(text = "b_{0}_{1}".format(parity_i, i),
-                               layer = "metal2",
-                               offset = b_offset)
-                self.add_label(text = "out_{0}_{1}".format(parity_i, i),
-                               layer = "metal2",
-                               offset = out_offset)
-
-                self.add_pin("a_{0}_{1}".format(parity_i, i))
-                self.add_pin("b_{0}_{1}".format(parity_i, i))
-                self.add_pin("out_{0}_{1}".format(parity_i, i))
-                #connect
-                self.connect_inst(["a_{0}_{1}".format(parity_i, i),
-                                   "b_{0}_{1}".format(parity_i, i),
-                                   "out_{0}_{1}".format(parity_i, i),
-                                   "vdd",
-                                   "gnd"])
+                #add to the design
+                self.add_to_design(parity_i, i, xor_2_position, a_offset, b_offset, out_offset)
+                
+            #mirror back before laying out gates for next parity 
+            a_pos, b_pos, out_pos = self.mirror_xor_2()
 
             # remember the current parity generator xoffset
             # this will be used for placement of syndrome generator

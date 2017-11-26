@@ -1,3 +1,8 @@
+"""
+Links/Refences:
+(1) http://blog.kabylkas.kz/2017/11/18/implementing-error-detecting-and-correcting-code-in-ram-how-is-it-implemented/
+(2) {POST ABOUT STACKING}
+"""
 import design
 import tech
 from tech import drc
@@ -59,7 +64,7 @@ class ecc(design.design):
         self.setup_layout_constants()
         self.add_parity_generator()
         self.generate_parity_connections()
-        #self.route_parity_generator()
+        self.route_parity_generator()
         #self.add_syndrome_generator()
         #self.route_syndrome_generator()
         #self.add_syndrome_to_locator_bus()
@@ -101,7 +106,6 @@ class ecc(design.design):
 
         #module widths
         self.parity_gen_width = 0 #calculated after layout
-        self.gate_num = 0
         #init lists
         self.vdd_positions = []
         self.gnd_positions = []
@@ -166,9 +170,18 @@ class ecc(design.design):
                            "out_{0}_{1}".format(parity_i, i),
                            "vdd",
                            "gnd"])
-        
-        self.syn_to_loc_bus_connections = []
 
+        #save for routing
+        self.xor_2_label_positions["a_{0}_{1}".format(parity_i, i)] = a_offset
+        self.xor_2_label_positions["b_{0}_{1}".format(parity_i, i)] = b_offset
+        self.xor_2_label_positions["out_{0}_{1}".format(parity_i, i)] = out_offset
+        self.xor_2_positions.append(xor_2_position)        
+
+    """
+    Parity generator is the interconnection of xor2 gates that calculate the parity.
+    Refer to link (1) shown at the top of this file.
+    The blog post discusses what is parity and the chosen algoritm
+    """  
     def add_parity_generator(self):
         debug.info(1, "Laying out xor2 gates...")
         #calculate total number of bits
@@ -183,7 +196,7 @@ class ecc(design.design):
         #start laying out
         for parity_i in range(self.parity_num):
             #calculate number of inputs for the current parity
-            #refer to: http://blog.kabylkas.kz/2017/11/18/implementing-error-detecting-and-correcting-code-in-ram-how-is-it-implemented/
+            #refer to the link (1). 
             #the blog post shows how number of inputs is calculated
             two_to_parity_i = int(math.pow(2, parity_i))
             check = True
@@ -243,7 +256,7 @@ class ecc(design.design):
                 global_xoffset = global_xoffset + self.xor_2.width
 
          
-        #add vdd and gnd labels
+        #add vdd and gnd labels for pairty generator
         for i in range(3):
             pin_name = "gnd"
             if i%2:
@@ -266,15 +279,36 @@ class ecc(design.design):
     generates all required connection between xor gates that will be used 
     by routing function (next function). The generation of the connections
     are based on our design choise to stack the xor gates in two rows. This
-    allows routing with now metal overlap. Refer to: {BLOG_POST_ABOUT_STACKING}
+    allows routing with now metal overlap. Refer to link (2).
+    This function only figures out the pairs to connect. It does not involve
+    any layout or actual routing.
     """
     def generate_parity_connections(self):
         debug.info(1, "Generating connections for router...")
-        gate_num = self.gate_num
-        gate_num_half = int(math.floor(self.gate_num/2))
+        total_bit_num = self.word_size+self.parity_num
 
         for parity_i in range(self.parity_num):
-            #generate connections between xor gates in the upper row 
+            #calculate number of inputs for the current parity
+            #refer to the link (1). 
+            #the blog post shows how number of inputs is calculated
+            two_to_parity_i = int(math.pow(2, parity_i))
+            check = True
+            input_num = 0
+            count = 0
+            for bit in range(two_to_parity_i, total_bit_num+1):
+                count = count + 1
+                if check:
+                    input_num = input_num + 1
+                if count == two_to_parity_i:
+                    count = 0
+                    check = not check
+
+            #subtract 1 from the calculated input number
+            input_num = input_num - 1
+            #number of xor2 gates=input number - 1
+            gate_num = input_num-1
+            gate_num_half = int(math.floor(gate_num/2))
+            #1. generate connections between xor gates in the upper row 
             dst = 0
             src = gate_num_half
             while dst<gate_num_half:
@@ -291,7 +325,8 @@ class ecc(design.design):
                 if up_row_gate_num%2:
                     xor_2_connection = ("out_{0}_{1}".format(parity_i,gate_num-1), "b_{0}_{1}".format(parity_i, gate_num_half-1))
                     self.xor_2_up_connections.append(xor_2_connection)
-            #generate connections between xor gates in the bottom row
+
+            #2.generate connections between xor gates in the bottom row
             inc = 1
             done = False
             depth = 0
@@ -304,6 +339,7 @@ class ecc(design.design):
                     second = offset + inc
                     if second<=gate_num_half:
                         xor_2_connection = ("out_{0}_{1}".format(parity_i, first-1), "a_{0}_{1}".format(parity_i, second-1), depth)
+                        print(xor_2_connection)
                         self.xor_2_down_connections.append(xor_2_connection)
                         out = second-1
 
@@ -326,6 +362,9 @@ class ecc(design.design):
                 inc = 2*inc
                 depth += 1
             self.parity_output_gates.append(out)
+
+        #finish
+        debug.info(1, "Done generating connections for router...")
 
     def route_parity_generator(self):
         debug.info(1, "Starting routing parity generator")

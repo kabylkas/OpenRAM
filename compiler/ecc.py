@@ -216,12 +216,14 @@ class ecc(design.design):
             # remember the current parity generator xoffset
             # this will be used for placement of syndrome generator
             self.parity_positions.append(global_xoffset)
+
             # calculate next parity generator xoffset
             global_xoffset = global_xoffset + int(math.ceil(gate_num/2))*self.xor_2.width
             if gate_num%2:
                 global_xoffset = global_xoffset + self.xor_2.width
 
             #generate connections between xor gates in the upper row 
+            #this will be used by routing function
             dst = 0
             src = gate_num_half
             while dst<gate_num_half:
@@ -234,6 +236,7 @@ class ecc(design.design):
                 src=src+2
 
             #generate connections between xor gates in the bottom row
+            #this will be used by routing function
             inc = 1
             done = False
             while not done:

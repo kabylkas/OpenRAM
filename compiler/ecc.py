@@ -54,10 +54,11 @@ class ecc(design.design):
 
     def create_layout(self):
         self.create_xor_2()
-        #self.create_pinv()
-        #self.create_nand_2()
+        self.create_pinv()
+        self.create_nand_2()
         self.setup_layout_constants()
         self.add_parity_generator()
+        self.generate_parity_connections()
         #self.route_parity_generator()
         #self.add_syndrome_generator()
         #self.route_syndrome_generator()
@@ -100,6 +101,7 @@ class ecc(design.design):
 
         #module widths
         self.parity_gen_width = 0 #calculated after layout
+        self.gate_num = 0
         #init lists
         self.vdd_positions = []
         self.gnd_positions = []
@@ -199,9 +201,10 @@ class ecc(design.design):
             input_num = input_num - 1
             #number of xor2 gates=input number - 1
             gate_num = input_num-1
+            self.gate_num = gate_num
             #The design choice was made to split the gates in half
             #and stack them. This allows easy routing.
-            #refer to: 
+            #refer to: {BLOG_ABOUT STACKING XOR} 
             #the blog post discusses the details of this design choice
             gate_num_half = int(math.floor(gate_num/2))
             self.xor_2_direction="R0"
@@ -239,51 +242,6 @@ class ecc(design.design):
             if gate_num%2:
                 global_xoffset = global_xoffset + self.xor_2.width
 
-            #generate connections between xor gates in the upper row 
-            #this will be used by routing function
-            dst = 0
-            src = gate_num_half
-            while dst<gate_num_half:
-                xor_2_connection = ("out_{0}_{1}".format(parity_i, src), "a_{0}_{1}".format(parity_i, dst))
-                self.xor_2_connections.append(xor_2_connection)
-                if src+1<gate_num:
-                    xor_2_connection = ("out_{0}_{1}".format(parity_i, src+1), "b_{0}_{1}".format(parity_i, dst))
-                    self.xor_2_connections.append(xor_2_connection)
-                dst=dst+2
-                src=src+2
-
-            #generate connections between xor gates in the bottom row
-            #this will be used by routing function
-            inc = 1
-            done = False
-            while not done:
-                offset = inc
-                first_iteration = True
-                while offset<=gate_num_half:
-                    first = offset
-                    second = offset + inc
-                    if second<=gate_num_half:
-                        xor_2_connection = ("out_{0}_{1}".format(parity_i, first-1), "a_{0}_{1}".format(parity_i, second-1))
-                        self.xor_2_connections.append(xor_2_connection)
-
-                    third = offset + 2*inc
-                    if third<=gate_num_half:
-                        xor_2_connection = ("out_{0}_{1}".format(parity_i, third-1), "b_{0}_{1}".format(parity_i, second-1))
-                        self.xor_2_connections.append(xor_2_connection)
-                        first_iteration = False
-
-                    offset = offset + 4*inc
-
-                if first_iteration and third>gate_num_half:
-                    done = True
-                    if second<gate_num_half:
-                        xor_2_connection = ("out_{0}_{1}".format(parity_i, gate_num_half-1), "b_{0}_{1}".format(parity_i, second-1))
-                        self.xor_2_connections.append(xor_2_connection)
-                    
-                inc = 2*inc
-        
-        #remember last global X offset
-        self.parity_gen_width = global_xoffset
          
         #add vdd and gnd labels
         for i in range(3):
@@ -296,13 +254,78 @@ class ecc(design.design):
                            layer = "metal1",
                            offset = label_offset)
 
-        #dump gds file for the router
-        self.gds_write(OPTS.openram_temp+"xor2s.gds")
+        #remember last global X offset
+        self.parity_gen_width = global_xoffset
         
         #finish
         debug.info(1, "Done placing parity generator (xor_2 gates)...")
 
 
+    """
+    After the xor gates that generate parity were laid out, this function
+    generates all required connection between xor gates that will be used 
+    by routing function (next function). The generation of the connections
+    are based on our design choise to stack the xor gates in two rows. This
+    allows routing with now metal overlap. Refer to: {BLOG_POST_ABOUT_STACKING}
+    """
+    def generate_parity_connections(self):
+        debug.info(1, "Generating connections for router...")
+        gate_num = self.gate_num
+        gate_num_half = int(math.floor(self.gate_num/2))
+
+        for parity_i in range(self.parity_num):
+            #generate connections between xor gates in the upper row 
+            dst = 0
+            src = gate_num_half
+            while dst<gate_num_half:
+                xor_2_connection = ("out_{0}_{1}".format(parity_i, src), "a_{0}_{1}".format(parity_i, dst))
+                self.xor_2_up_connections.append(xor_2_connection)
+                if src+1<gate_num:
+                    xor_2_connection = ("out_{0}_{1}".format(parity_i, src+1), "b_{0}_{1}".format(parity_i, dst))
+                    self.xor_2_up_connections.append(xor_2_connection)
+                dst=dst+2
+                src=src+2
+            #add one more connection if upper row gates are not even
+            if gate_num%2:
+                up_row_gate_num = gate_num-gate_num_half
+                if up_row_gate_num%2:
+                    xor_2_connection = ("out_{0}_{1}".format(parity_i,gate_num-1), "b_{0}_{1}".format(parity_i, gate_num_half-1))
+                    self.xor_2_up_connections.append(xor_2_connection)
+            #generate connections between xor gates in the bottom row
+            inc = 1
+            done = False
+            depth = 0
+            out = 0
+            while not done:
+                offset = inc
+                first_iteration = True
+                while offset<=gate_num_half:
+                    first = offset
+                    second = offset + inc
+                    if second<=gate_num_half:
+                        xor_2_connection = ("out_{0}_{1}".format(parity_i, first-1), "a_{0}_{1}".format(parity_i, second-1), depth)
+                        self.xor_2_down_connections.append(xor_2_connection)
+                        out = second-1
+
+                    third = offset + 2*inc
+                    if third<=gate_num_half:
+                        xor_2_connection = ("b_{0}_{1}".format(parity_i, second-1), "out_{0}_{1}".format(parity_i, third-1), depth)
+                        self.xor_2_down_connections.append(xor_2_connection)
+                        first_iteration = False
+                        out = second-1
+
+                    offset = offset + 4*inc
+
+                if first_iteration and third>gate_num_half:
+                    done = True
+                    if second<gate_num_half:
+                        xor_2_connection = ("b_{0}_{1}".format(parity_i, second-1), "out_{0}_{1}".format(parity_i, gate_num_half-1), depth)
+                        self.xor_2_down_connections.append(xor_2_connection)
+                        out = second-1
+                    
+                inc = 2*inc
+                depth += 1
+            self.parity_output_gates.append(out)
 
     def route_parity_generator(self):
         debug.info(1, "Starting routing parity generator")

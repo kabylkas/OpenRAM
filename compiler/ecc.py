@@ -143,37 +143,36 @@ class ecc(design.design):
     """
     Generic function to add arbitrary module into design
     """
-    def add_to_design(self, mod_name, pin_name, mod, index, position, direction, offset, skip=["vdd", "gnd"]):
-        name = mod_name+"_{0}_{1}".format(parity_i, i)
+    def add_to_design(self, mod, mod_name, pin_name, layer, subscripts, position, direction, offset, skip=["vdd", "gnd"]):
+        sub=""
+        for subscript in subscripts:
+            sub += "_"+subscript
+
+        name = mod_name+sub
 
         #add module
         self.add_inst(name = name, 
                       mod = mod,
                       offset = positions,
                       mirror = direction)
-
+        instances = []
         for pin in mod.pin_map:
-        #add labels
-        self.add_label(text = "_a_{0}_{1}".format(parity_i, i),
-                       layer = "metal2",
-                       offset = a_offset)
-        self.add_label(text = "b_{0}_{1}".format(parity_i, i),
-                       layer = "metal2",
-                       offset = b_offset)
-        self.add_label(text = "out_{0}_{1}".format(parity_i, i),
-                       layer = "metal2",
-                       offset = out_offset)
+            if pin not in skip:
+                p = pin_name+"_"+pin+sub
 
-        self.add_pin("a_{0}_{1}".format(parity_i, i))
-        self.add_pin("b_{0}_{1}".format(parity_i, i))
-        self.add_pin("out_{0}_{1}".format(parity_i, i))
+                #add labels
+                self.add_label(text = p,
+                               layer = layer,
+                               offset = offset[pin])
+                #add pin
+                self.add_pin(p)
+            
+                instances.append(p)
+
         #connect
-        self.connect_inst(["a_{0}_{1}".format(parity_i, i),
-                           "b_{0}_{1}".format(parity_i, i),
-                           "out_{0}_{1}".format(parity_i, i),
-                           "vdd",
-                           "gnd"])
-
+        instances.append("vdd")
+        instances.append("gnd")
+        self.connect_inst(instances)
 
     """
     Parity generator is the interconnection of xor2 gates that calculate the parity.

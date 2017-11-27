@@ -20,6 +20,9 @@ run_real:
 		./openram.py -v -n -o $(name) -p ./design_dir/$(name) $(config_file)
 		glade design_dir/$(name)/$(name).gds
 
+magic:
+		magic -T SCN3ME_SUBM.30
+
 clean:
 		rm *.pyc
 		rm *.gds

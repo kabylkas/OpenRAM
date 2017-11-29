@@ -155,7 +155,7 @@ class ecc(design.design):
                       mod_position, direction, pin_offsets, skip=["vdd", "gnd"]):
         sub=""
         for subscript in subscripts:
-            sub += "_"+subscript
+            sub += "_"+str(subscript)
 
         name = mod_name+sub
 
@@ -164,6 +164,7 @@ class ecc(design.design):
                       mod = mod,
                       offset = mod_position,
                       mirror = direction)
+
         instances = []
         for pin in mod.pin_map:
             if pin not in skip:
@@ -227,6 +228,7 @@ class ecc(design.design):
             #the blog post discusses the details of this design choice
             gate_num_half = int(math.floor(gate_num/2))
             self.xor_2_direction="R0"
+            xor_2_pin_offsets = {}
             for i in range(gate_num):
                 if i<gate_num_half:
                     xoffset = global_xoffset + i*self.xor_2.width
@@ -247,13 +249,13 @@ class ecc(design.design):
                 xor_2_pin_offsets["out"] = xor_2_position+out_pos
 
                 #add to the design
-                self.add_to_design(mod=self.xor_2_mod, \
+                self.add_to_design(mod=self.xor_2, \
                                    mod_name="parity_xor_2",\
                                    pin_name="par",\
-                                   layer="metal2",\
+                                   label_layer="metal2",\
                                    subscripts=[parity_i, i],\
                                    mod_position=xor_2_position,\
-                                   direction=self.xor_2_position,\
+                                   direction=self.xor_2_direction,\
                                    pin_offsets=xor_2_pin_offsets,\
                                    skip=["vdd", "gnd"])
                 #save for routing

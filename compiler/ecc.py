@@ -142,8 +142,17 @@ class ecc(design.design):
         
     """
     Generic function to add arbitrary module into design
+    Interface:
+      - mod: Module that you want to add to the design. 
+             Example: xor_2 that is initialize in the constractor
+      - mod_name: unique name for a module with which it will be
+                  identified in the design. Example: "parity_xor2_0_1"
+      - pin_name: allows to identify a pin name with some pre-script.
+                  example: parity_xor2_a, parity_xor2_b, parity_xor2_out
+      - TODO
     """
-    def add_to_design(self, mod, mod_name, pin_name, layer, subscripts, position, direction, offset, skip=["vdd", "gnd"]):
+    def add_to_design(self, mod, mod_name, pin_name, label_layer, subscripts, \
+                      mod_position, direction, pin_offsets, skip=["vdd", "gnd"]):
         sub=""
         for subscript in subscripts:
             sub += "_"+subscript
@@ -153,7 +162,7 @@ class ecc(design.design):
         #add module
         self.add_inst(name = name, 
                       mod = mod,
-                      offset = positions,
+                      offset = mod_position,
                       mirror = direction)
         instances = []
         for pin in mod.pin_map:
@@ -162,8 +171,8 @@ class ecc(design.design):
 
                 #add labels
                 self.add_label(text = p,
-                               layer = layer,
-                               offset = offset[pin])
+                               layer = label_layer,
+                               offset = pin_offsets[pin])
                 #add pin
                 self.add_pin(p)
             
@@ -233,17 +242,24 @@ class ecc(design.design):
 
                 #calculate position for the current gate
                 xor_2_position = vector(xoffset, yoffset)
-                a_offset = xor_2_position+a_pos
-                b_offset = xor_2_position+b_pos
-                out_offset = xor_2_position+out_pos
+                xor_2_pin_offsets["a"] = xor_2_position+a_pos
+                xor_2_pin_offsets["b"] = xor_2_position+b_pos
+                xor_2_pin_offsets["out"] = xor_2_position+out_pos
 
                 #add to the design
-                self.add_to_design("parity_xor_2", "par",  parity_i, i, xor_2_position, a_offset, b_offset, out_offset)
-
+                self.add_to_design(mod=self.xor_2_mod, \
+                                   mod_name="parity_xor_2",\
+                                   pin_name="par",\
+                                   layer="metal2",\
+                                   subscripts=[parity_i, i],\
+                                   mod_position=xor_2_position,\
+                                   direction=self.xor_2_position,\
+                                   pin_offsets=xor_2_pin_offsets,\
+                                   skip=["vdd", "gnd"])
                 #save for routing
-                self.xor_2_label_positions["a_{0}_{1}".format(parity_i, i)] = a_offset
-                self.xor_2_label_positions["b_{0}_{1}".format(parity_i, i)] = b_offset
-                self.xor_2_label_positions["out_{0}_{1}".format(parity_i, i)] = out_offset
+                self.xor_2_label_positions["a_{0}_{1}".format(parity_i, i)] = xor_2_pin_offsets["a"]
+                self.xor_2_label_positions["b_{0}_{1}".format(parity_i, i)] = xor_2_pin_offsets["b"]
+                self.xor_2_label_positions["out_{0}_{1}".format(parity_i, i)] = xor_2_pin_offsets["out"]
                 self.xor_2_positions.append(xor_2_position)        
                 
             #mirror back before laying out gates for next parity 

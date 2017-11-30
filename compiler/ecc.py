@@ -27,10 +27,18 @@ class ecc(design.design):
         design.design.__init__(self, "ecc")
         debug.info(1, "Creating {0}".format(self.name))
 
+        #2 input xclusive or
         c = reload(__import__(OPTS.config.xor_2))
         self.mod_xor_2 = getattr(c, OPTS.config.xor_2)
         self.xor_2_pin_map = self.mod_xor_2.pin_map
+        self.create_xor_2()
+
+        #inverter
+        self.create_pinv()
         self.pinv_pin_map = getattr(self.pinv, "pin_map")
+
+        #2 input nand gate
+        self.create_nand_2()
 
         self.word_size = word_size
         self.parity_num = int(math.floor(math.log(word_size,2)))+1;
@@ -59,15 +67,12 @@ class ecc(design.design):
         self.add_pin("gnd")
 
     def create_layout(self):
-        self.create_xor_2()
-        self.create_pinv()
-        self.create_nand_2()
         self.setup_layout_constants()
         self.add_parity_generator()
         self.generate_parity_connections()
         self.route_parity_generator()
         self.add_syndrome_generator()
-        #self.route_syndrome_generator()
+        self.route_syndrome_generator()
         #self.add_syndrome_to_locator_bus()
         #self.add_locator()
         #self.route_bus_to_locator()
@@ -295,7 +300,6 @@ class ecc(design.design):
 
         #remember last global X offset
         self.parity_gen_width = global_xoffset
-        
         #finish
         debug.info(1, "Done placing parity generator (xor_2 gates)...")
 
@@ -492,6 +496,7 @@ class ecc(design.design):
         global_yoffset = self.current_global_yoffset
         i=0
         xor_2_pin_offsets = {}
+        pinv_pin_offsets = {}
         for x_syndrome_position in self.parity_positions:
             ################
             #place XOR gate
@@ -538,13 +543,14 @@ class ecc(design.design):
                 pinv_position = vector(x_syndrome_position+self.xor_2.width+2*drc["metal2_to_metal2"], self.global_yoffset-drc["minwidth_metal1"]/2)
     
             #calculate input and output offsets
-            a_pos, z_pos = get_pinv_pin_pos()
-            pinv_pin_offsets["a"] = pinv_position+\
-                                vector(pinv_input_position[0], pinv_input_position[1])-\
-                                vector(0, xor_2_h-(xor_2_h-2*pinv_input_position[1]))
-            pinv_pin_offsets["z"] = pinv_position+\
-                                 vector(pinv_output_position[0], pinv_output_position[1])-\
-                                 vector(0,xor_2_h-(xor_2_h-2*pinv_output_position[1]))
+            a_pos, z_pos = self.get_pinv_pin_pos()
+            xor_2_h = self.mod_xor_2.height
+            xor_param = xor_2_h-(xor_2_h-2*a_pos[1])
+
+            pinv_pin_offsets["A"] = pinv_position+a_pos-\
+                                vector(0, xor_param)
+            pinv_pin_offsets["Z"] = pinv_position+z_pos-\
+                                 vector(0,xor_param)
 
             #add syndrom inverter to the design
             self.add_to_design(mod=self.pinv, \
@@ -553,12 +559,12 @@ class ecc(design.design):
                                label_layer="metal2",\
                                subscripts=[i],\
                                mod_position=pinv_position,\
-                               direction="R0",\
+                               direction="MX",\
                                pin_offsets=pinv_pin_offsets,\
                                skip=["vdd", "gnd"])
         
             minm1 = drc["minwidth_metal1"]
-            inv_in_out_pair = [pinv_input_offset-vector(0,minm1), pinv_output_offset-vector(0,minm1)]
+            inv_in_out_pair = [pinv_pin_offsets["A"]-vector(0,minm1), pinv_pin_offsets["Z"]-vector(0,minm1)]
             self.add_via(layers   = ("metal1", "via1", "metal2"),
                          offset   = inv_in_out_pair[0])
             self.add_via(layers   = ("metal1", "via1", "metal2"),

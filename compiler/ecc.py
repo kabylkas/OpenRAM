@@ -269,9 +269,9 @@ class ecc(design.design):
                                    pin_offsets=xor_2_pin_offsets,\
                                    skip=["vdd", "gnd"])
                 #save for routing
-                self.xor_2_label_positions["a_{0}_{1}".format(parity_i, i)] = xor_2_pin_offsets["a"]
-                self.xor_2_label_positions["b_{0}_{1}".format(parity_i, i)] = xor_2_pin_offsets["b"]
-                self.xor_2_label_positions["out_{0}_{1}".format(parity_i, i)] = xor_2_pin_offsets["out"]
+                self.xor_2_label_positions["par_a_{0}_{1}".format(parity_i, i)] = xor_2_pin_offsets["a"]
+                self.xor_2_label_positions["par_b_{0}_{1}".format(parity_i, i)] = xor_2_pin_offsets["b"]
+                self.xor_2_label_positions["par_out_{0}_{1}".format(parity_i, i)] = xor_2_pin_offsets["out"]
                 self.xor_2_positions.append(xor_2_position)        
                 
             #mirror back before laying out gates for next parity 
@@ -342,10 +342,10 @@ class ecc(design.design):
             dst = 0
             src = gate_num_half
             while dst<gate_num_half:
-                xor_2_connection = ("out_{0}_{1}".format(parity_i, src), "a_{0}_{1}".format(parity_i, dst))
+                xor_2_connection = ("par_out_{0}_{1}".format(parity_i, src), "par_a_{0}_{1}".format(parity_i, dst))
                 self.xor_2_up_connections.append(xor_2_connection)
                 if src+1<gate_num:
-                    xor_2_connection = ("out_{0}_{1}".format(parity_i, src+1), "b_{0}_{1}".format(parity_i, dst))
+                    xor_2_connection = ("par_out_{0}_{1}".format(parity_i, src+1), "par_b_{0}_{1}".format(parity_i, dst))
                     self.xor_2_up_connections.append(xor_2_connection)
                 dst=dst+2
                 src=src+2
@@ -353,7 +353,7 @@ class ecc(design.design):
             if gate_num%2:
                 up_row_gate_num = gate_num-gate_num_half
                 if up_row_gate_num%2:
-                    xor_2_connection = ("out_{0}_{1}".format(parity_i,gate_num-1), "b_{0}_{1}".format(parity_i, gate_num_half-1))
+                    xor_2_connection = ("par_out_{0}_{1}".format(parity_i,gate_num-1), "par_b_{0}_{1}".format(parity_i, gate_num_half-1))
                     self.xor_2_up_connections.append(xor_2_connection)
 
             #2.generate connections between xor gates in the bottom row
@@ -368,14 +368,14 @@ class ecc(design.design):
                     first = offset
                     second = offset + inc
                     if second<=gate_num_half:
-                        xor_2_connection = ("out_{0}_{1}".format(parity_i, first-1), "a_{0}_{1}".format(parity_i, second-1), depth)
+                        xor_2_connection = ("par_out_{0}_{1}".format(parity_i, first-1), "par_a_{0}_{1}".format(parity_i, second-1), depth)
                         print(xor_2_connection)
                         self.xor_2_down_connections.append(xor_2_connection)
                         out = second-1
 
                     third = offset + 2*inc
                     if third<=gate_num_half:
-                        xor_2_connection = ("b_{0}_{1}".format(parity_i, second-1), "out_{0}_{1}".format(parity_i, third-1), depth)
+                        xor_2_connection = ("par_b_{0}_{1}".format(parity_i, second-1), "par_out_{0}_{1}".format(parity_i, third-1), depth)
                         self.xor_2_down_connections.append(xor_2_connection)
                         first_iteration = False
                         out = second-1
@@ -385,7 +385,7 @@ class ecc(design.design):
                 if first_iteration and third>gate_num_half:
                     done = True
                     if second<gate_num_half:
-                        xor_2_connection = ("b_{0}_{1}".format(parity_i, second-1), "out_{0}_{1}".format(parity_i, gate_num_half-1), depth)
+                        xor_2_connection = ("par_b_{0}_{1}".format(parity_i, second-1), "par_out_{0}_{1}".format(parity_i, gate_num_half-1), depth)
                         self.xor_2_down_connections.append(xor_2_connection)
                         out = second-1
                     
@@ -414,7 +414,7 @@ class ecc(design.design):
         for connection in self.xor_2_up_connections:
             src = self.xor_2_label_positions[connection[0]]
             dest = self.xor_2_label_positions[connection[1]]
-            yoffset = self.xor_2_label_positions["a_0_0"][1] + (m3m+m3min)
+            yoffset = self.xor_2_label_positions["par_a_0_0"][1] + (m3m+m3min)
             #vertical m2 from source up to yoffset
             w = m2m
             h = src[1]-yoffset
@@ -452,7 +452,7 @@ class ecc(design.design):
             m2min = drc["minwidth_metal2"]
             m3m = drc["metal3_to_metal3"]
             m3min = drc["minwidth_metal3"]
-            yoffset = self.xor_2_label_positions["out_0_0"][1] - m3m-m3min - depth*(m3m+m3min)
+            yoffset = self.xor_2_label_positions["par_out_0_0"][1] - m3m-m3min - depth*(m3m+m3min)
 
             m3_offset = vector(src[0], yoffset)-vector(m2min,0)
             w = dest[0]-src[0]
@@ -508,13 +508,13 @@ class ecc(design.design):
                 xor_2_position = vector(x_syndrome_position, global_yoffset)
 
 
-            a_pos, b_pos, out_pos = self.mirror_xor_2()
+            xor_a_pos, xor_b_pos, xor_out_pos = self.mirror_xor_2()
             #calculate position for the current gate
-            xor_2_pin_offsets["a"] = xor_2_position+a_pos
-            xor_2_pin_offsets["b"] = xor_2_position+b_pos
-            xor_2_pin_offsets["out"] = xor_2_position+out_pos
+            xor_2_pin_offsets["a"] = xor_2_position+xor_a_pos
+            xor_2_pin_offsets["b"] = xor_2_position+xor_b_pos
+            xor_2_pin_offsets["out"] = xor_2_position+xor_out_pos
 
-
+      
             #add syndrom xor2 to the design
             self.add_to_design(mod=self.xor_2, \
                                mod_name="syn_xor_2",\
@@ -527,9 +527,9 @@ class ecc(design.design):
                                skip=["vdd", "gnd"])
 
             #remember label positions for routing
-            self.syn_label_positions["syn_a_{0}".format(i)] = xor_2_pin_offsets["a"]
-            self.syn_label_positions["syn_b_{0}".format(i)] = xor_2_pin_offsets["b"]
-            self.syn_label_positions["syn_out_{0}".format(i)] = xor_2_pin_offsets["out"]
+            self.syn_label_positions["syn_x_a_{0}".format(i)] = xor_2_pin_offsets["a"]
+            self.syn_label_positions["syn_x_b_{0}".format(i)] = xor_2_pin_offsets["b"]
+            self.syn_label_positions["syn_x_out_{0}".format(i)] = xor_2_pin_offsets["out"]
 
             ######################
             #place PINV (inverter)
@@ -575,7 +575,9 @@ class ecc(design.design):
             #remember label offsets for routing
             self.syn_label_positions["inv_a_{0}".format(i)] = inv_in_out_pair[0]
             self.syn_label_positions["inv_z_{0}".format(i)] = inv_in_out_pair[1]
-            
+           
+            #flip back the pins 
+            xor_a_pos, xor_b_pos, xor_out_pos = self.mirror_xor_2()
             #increase counter
             i = i + 1
         ########################
@@ -608,7 +610,7 @@ class ecc(design.design):
         debug.info(1, "Starting to route syndrome generator")
         #route syndrome output to the inverter
         for i in range(self.parity_num):
-            connection = ("syn_out_{0}".format(i), "inv_a_{0}".format(i))
+            connection = ("syn_x_out_{0}".format(i), "inv_a_{0}".format(i))
 
             src = self.syn_label_positions[connection[0]]
             dest = self.syn_label_positions[connection[1]]
@@ -651,7 +653,7 @@ class ecc(design.design):
         #route parity outputs to the syndrome generator
         i=0
         for out_gate in self.parity_output_gates:
-            connection = ("out_{0}_{1}".format(i, out_gate), "syn_b_{0}".format(i))
+            connection = ("par_out_{0}_{1}".format(i, out_gate), "syn_x_b_{0}".format(i))
             i+=1
             src = self.xor_2_label_positions[connection[0]]
             dest = self.syn_label_positions[connection[1]]

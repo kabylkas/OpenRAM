@@ -3,6 +3,8 @@ config_file = example_config_scn3me_subm.py
 
 run:
 		python ./tests/31_ecc_test.py -v -v -t scn3me_subm
+		sshpass -p "Kazakh2030Blue" scp ./ecc.gds nkabylka@mada0.soe.ucsc.edu:/soe/nkabylka/.
+
  
 run_ex:
 		python ./tests/19_bank_test.py -v -t scn3me_subm 

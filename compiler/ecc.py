@@ -39,6 +39,7 @@ class ecc(design.design):
 
         #2 input nand gate
         self.create_nand_2()
+        self.nand_2_pin_map = getattr(self.nand_2, "pin_map")
 
         self.word_size = word_size
         self.parity_num = int(math.floor(math.log(word_size,2)))+1;
@@ -73,8 +74,8 @@ class ecc(design.design):
         self.route_parity_generator()
         self.add_syndrome_generator()
         self.route_syndrome_generator()
-        #self.add_syndrome_to_locator_bus()
-        #self.add_locator()
+        self.add_syndrome_to_locator_bus()
+        self.add_locator()
         #self.route_bus_to_locator()
         #self.route_bus_to_syndrome()
         #self.route_locator()
@@ -129,6 +130,7 @@ class ecc(design.design):
         self.nand_2_down_connections = []
         self.inv_positions = []
         self.syn_to_loc_bus_lines = []
+        self.syn_to_loc_bus_connections = []
         self.syn_to_loc_bus_line_positions = {}
 
     def mirror_xor_2(self):
@@ -138,6 +140,13 @@ class ecc(design.design):
         self.xor_2_pin_map["b"][0].transform(0, direction, 0)
         self.xor_2_pin_map["out"][0].transform(0, direction, 0)
         return self.get_xor_2_pin_pos()
+
+    def mirror_nand_2(self):
+        direction="MX"
+        self.nand_2_pin_map["A"][0].transform(0,direction,0)
+        self.nand_2_pin_map["B"][0].transform(0,direction,0)
+        self.nand_2_pin_map["Z"][0].transform(0,direction,0)
+        return self.get_nand_2_pin_pos()
         
     def get_xor_2_pin_pos(self):
         a_pos = self.xor_2_pin_map["a"][0].center()
@@ -149,6 +158,12 @@ class ecc(design.design):
         a_pos = self.pinv_pin_map["A"][0].center()
         z_pos = self.pinv_pin_map["Z"][0].center() 
         return a_pos, z_pos
+
+    def get_nand_2_pin_pos(self):
+        a_pos = self.nand_2_pin_map["A"][0].center()
+        b_pos = self.nand_2_pin_map["B"][0].center()
+        z_pos = self.nand_2_pin_map["Z"][0].center()
+        return a_pos, b_pos, z_pos
         
     """
     Generic function to add arbitrary module into design
@@ -745,6 +760,8 @@ class ecc(design.design):
         nand_2_width = getattr(self.nand_2, "width")
         nand_2_height = getattr(self.nand_2, "height")
         additional_offset = (self.parity_gen_width-self.word_size*gate_num_half*nand_2_width)/(self.word_size*gate_num_half)
+        nand_2_pin_offsets = {}
+        a_pos, b_pos, z_pos = self.get_nand_2_pin_pos()
         for i in range(self.word_size):
             for j in range(gate_num):
                 name = "locator_nand_{0}_{1}".format(i,j)
@@ -759,67 +776,50 @@ class ecc(design.design):
                     flip = 1
                 xoffset += global_xoffset
                 nand_2_position = vector(xoffset, global_yoffset)
-                #add current xor2 to the design
-                self.add_inst(name = name, 
-                              mod = self.nand_2,
-                              offset = nand_2_position,
-                              mirror = direction)
         
+                if j==gate_num_half:
+                    a_pos, b_pos, z_pos = self.mirror_nand_2()
+
                 #calculate input and output offsets
-                nand_2_a_position = getattr(self.nand_2, "A_position")
-                nand_2_b_position = getattr(self.nand_2, "B_position")
-                nand_2_z_position = getattr(self.nand_2, "Z_position")
-      
-                nand_2_a_offset = nand_2_position+\
-                                  vector(nand_2_a_position[0], nand_2_a_position[1])-\
-                                  vector(0, flip*(nand_2_height-(nand_2_height-2*nand_2_a_position[1])))
-                nand_2_b_offset = nand_2_position+\
-                                  vector(nand_2_b_position[0], nand_2_b_position[1])-\
-                                  vector(0, flip*(nand_2_height-(nand_2_height-2*nand_2_b_position[1])))
-                nand_2_z_offset = nand_2_position+\
-                                  vector(nand_2_z_position[0], nand_2_z_position[1])-\
-                                  vector(0, flip*(nand_2_height-(nand_2_height-2*nand_2_z_position[1])))
+                nand_2_pin_offsets["A"] = nand_2_position+a_pos
+                nand_2_pin_offsets["B"] = nand_2_position+b_pos
+                nand_2_pin_offsets["Z"] = nand_2_position+z_pos
 
-
-                #add labels/pins/connect
-                self.add_label(text = "nand2_a_{0}_{1}".format(i,j),
-                               layer = "metal2",
-                               offset = nand_2_a_offset+vector(-1,1-2*flip))
-                self.add_label(text = "nand2_b_{0}_{1}".format(i,j),
-                               layer = "metal2",
-                               offset = nand_2_b_offset+vector(-1,1-2*flip))
-                self.add_label(text = "nand2_z_{0}_{1}".format(i,j),
-                               layer = "metal2",
-                               offset = nand_2_z_offset+vector(1,1-2*flip))
+                #add to the design
+                self.add_to_design(mod=self.nand_2, \
+                                   mod_name="locator_nand_2",\
+                                   pin_name="loc_nand_2",\
+                                   label_layer="metal2",\
+                                   subscripts=[i, j],\
+                                   mod_position=nand_2_position,\
+                                   direction=direction,\
+                                   pin_offsets=nand_2_pin_offsets,\
+                                   skip=["vdd", "gnd"])
 
                 #append labels to connections as destination, source will be added later
                 if direction == "R0":
-                    self.syn_to_loc_bus_connections.append(["", "nand_2_a_{0}_{1}".format(i,j)])
-                    self.syn_to_loc_bus_connections.append(["", "nand_2_b_{0}_{1}".format(i,j)])
+                    self.syn_to_loc_bus_connections.append(["", "loc_nand_2_a_{0}_{1}".format(i,j)])
+                    self.syn_to_loc_bus_connections.append(["", "loc_nand_2_b_{0}_{1}".format(i,j)])
 
-                self.add_pin("nand_2_a_{0}_{1}".format(i,j))
-                self.add_pin("nand_2_b_{0}_{1}".format(i,j))
-                self.add_pin("nand_2_z_{0}_{1}".format(i,j))
-                self.connect_inst(["nand_2_a_{0}_{1}".format(i,j),
-                                   "nand_2_b_{0}_{1}".format(i,j),
-                                   "nand_2_z_{0}_{1}".format(i,j),
-                                   "vdd",
-                                   "gnd"])
-                
                 self.add_via(layers   = ("metal1", "via1", "metal2"),
-                             offset   = nand_2_a_offset-vector(0, flip))
+                             offset   = nand_2_pin_offsets["A"])
                 self.add_via(layers   = ("metal1", "via1", "metal2"),
-                             offset   = nand_2_b_offset-vector(0,flip))
+                             offset   = nand_2_pin_offsets["B"])
                 self.add_via(layers   = ("metal1", "via1", "metal2"),
-                             offset   = nand_2_z_offset-vector(0, flip))
+                             offset   = nand_2_pin_offsets["Z"])
                 if flip:
                     self.add_via(layers   = ("metal1", "via1", "metal2"),
-                                 offset   = nand_2_b_offset-vector(flip*2*drc["minwidth_metal3"], flip))
+                                 offset   = nand_2_pin_offsets["B"]-vector(flip*2*drc["minwidth_metal3"], flip))
                 
 
-                self.locator_positions["nand_2_a_{0}_{1}".format(i,j)] = nand_2_a_offset-vector(0, flip)
-                self.locator_positions["nand_2_b_{0}_{1}".format(i,j)] = nand_2_b_offset-vector(flip*2*drc["minwidth_metal3"], flip)
-                self.locator_positions["nand_2_z_{0}_{1}".format(i,j)] = nand_2_z_offset-vector(0, flip)
+                self.locator_positions["nand_2_a_{0}_{1}".format(i,j)] = nand_2_pin_offsets["A"]-vector(0, flip)
+                self.locator_positions["nand_2_b_{0}_{1}".format(i,j)] = nand_2_pin_offsets["B"]-vector(flip*2*drc["minwidth_metal3"], flip)
+                self.locator_positions["nand_2_z_{0}_{1}".format(i,j)] = nand_2_pin_offsets["Z"]-vector(0, flip)
+
+            #mirror nand2 pins back
+            a_pos, b_pos, z_pos = self.mirror_nand_2()
+            
+            #calculate xoffset
             global_xoffset+=gate_num_half*(nand_2_width+additional_offset)
             #adding last connection from syndrome to locator bus in case 
             #gate numbers on upper row are even 

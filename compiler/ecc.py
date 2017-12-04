@@ -149,20 +149,20 @@ class ecc(design.design):
         return self.get_nand_2_pin_pos()
         
     def get_xor_2_pin_pos(self):
-        a_pos = self.xor_2_pin_map["a"][0].center()
-        b_pos = self.xor_2_pin_map["b"][0].center()
-        out_pos = self.xor_2_pin_map["out"][0].center()
+        a_pos = self.xor_2_pin_map["a"][0].ll()
+        b_pos = self.xor_2_pin_map["b"][0].bc()
+        out_pos = self.xor_2_pin_map["out"][0].lc()
         return a_pos, b_pos, out_pos
 
     def get_pinv_pin_pos(self):
-        a_pos = self.pinv_pin_map["A"][0].center()
-        z_pos = self.pinv_pin_map["Z"][0].center() 
+        a_pos = self.pinv_pin_map["A"][0].ll()
+        z_pos = self.pinv_pin_map["Z"][0].bc() 
         return a_pos, z_pos
 
     def get_nand_2_pin_pos(self):
-        a_pos = self.nand_2_pin_map["A"][0].center()
-        b_pos = self.nand_2_pin_map["B"][0].center()
-        z_pos = self.nand_2_pin_map["Z"][0].center()
+        a_pos = self.nand_2_pin_map["A"][0].ll()
+        b_pos = self.nand_2_pin_map["B"][0].ll()
+        z_pos = self.nand_2_pin_map["Z"][0].bc()
         return a_pos, b_pos, z_pos
         
     """
@@ -761,6 +761,7 @@ class ecc(design.design):
         nand_2_height = getattr(self.nand_2, "height")
         additional_offset = (self.parity_gen_width-self.word_size*gate_num_half*nand_2_width)/(self.word_size*gate_num_half)
         nand_2_pin_offsets = {}
+        label_offsets = {}
         a_pos, b_pos, z_pos = self.get_nand_2_pin_pos()
         for i in range(self.word_size):
             for j in range(gate_num):
@@ -785,6 +786,9 @@ class ecc(design.design):
                 nand_2_pin_offsets["B"] = nand_2_position+b_pos
                 nand_2_pin_offsets["Z"] = nand_2_position+z_pos
 
+                label_offsets["A"] = nand_2_pin_offsets["A"]+vector(0,0.5)
+                label_offsets["B"] = nand_2_pin_offsets["B"]+vector(0,0.5)
+                label_offsets["Z"] = nand_2_pin_offsets["Z"]+vector(0,0.5)
                 #add to the design
                 self.add_to_design(mod=self.nand_2, \
                                    mod_name="locator_nand_2",\
@@ -793,7 +797,7 @@ class ecc(design.design):
                                    subscripts=[i, j],\
                                    mod_position=nand_2_position,\
                                    direction=direction,\
-                                   pin_offsets=nand_2_pin_offsets,\
+                                   pin_offsets=label_offsets,\
                                    skip=["vdd", "gnd"])
 
                 #append labels to connections as destination, source will be added later
@@ -807,14 +811,11 @@ class ecc(design.design):
                              offset   = nand_2_pin_offsets["B"])
                 self.add_via(layers   = ("metal1", "via1", "metal2"),
                              offset   = nand_2_pin_offsets["Z"])
-                if flip:
-                    self.add_via(layers   = ("metal1", "via1", "metal2"),
-                                 offset   = nand_2_pin_offsets["B"]-vector(flip*2*drc["minwidth_metal3"], flip))
                 
 
-                self.locator_positions["nand_2_a_{0}_{1}".format(i,j)] = nand_2_pin_offsets["A"]-vector(0, flip)
-                self.locator_positions["nand_2_b_{0}_{1}".format(i,j)] = nand_2_pin_offsets["B"]-vector(flip*2*drc["minwidth_metal3"], flip)
-                self.locator_positions["nand_2_z_{0}_{1}".format(i,j)] = nand_2_pin_offsets["Z"]-vector(0, flip)
+                self.locator_positions["loc_nand_2_a_{0}_{1}".format(i,j)] = nand_2_pin_offsets["A"]
+                self.locator_positions["loc_nand_2_b_{0}_{1}".format(i,j)] = nand_2_pin_offsets["B"]
+                self.locator_positions["loc_nand_2_z_{0}_{1}".format(i,j)] = nand_2_pin_offsets["Z"]
 
             #mirror nand2 pins back
             a_pos, b_pos, z_pos = self.mirror_nand_2()

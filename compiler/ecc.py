@@ -76,8 +76,8 @@ class ecc(design.design):
         self.route_syndrome_generator()
         self.add_syndrome_to_locator_bus()
         self.add_locator()
-        #self.route_bus_to_locator()
-        #self.route_bus_to_syndrome()
+        self.route_bus_to_locator()
+        self.route_bus_to_syndrome()
         #self.route_locator()
         #self.add_corrector()
         #self.route_corrector()
@@ -149,9 +149,9 @@ class ecc(design.design):
         return self.get_nand_2_pin_pos()
         
     def get_xor_2_pin_pos(self):
-        a_pos = self.xor_2_pin_map["a"][0].ll()
-        b_pos = self.xor_2_pin_map["b"][0].bc()
-        out_pos = self.xor_2_pin_map["out"][0].lc()
+        a_pos = self.xor_2_pin_map["a"][0].center()
+        b_pos = self.xor_2_pin_map["b"][0].center()
+        out_pos = self.xor_2_pin_map["out"][0].center()
         return a_pos, b_pos, out_pos
 
     def get_pinv_pin_pos(self):
@@ -161,7 +161,7 @@ class ecc(design.design):
 
     def get_nand_2_pin_pos(self):
         a_pos = self.nand_2_pin_map["A"][0].ll()
-        b_pos = self.nand_2_pin_map["B"][0].ll()
+        b_pos = self.nand_2_pin_map["B"][0].bc()
         z_pos = self.nand_2_pin_map["Z"][0].bc()
         return a_pos, b_pos, z_pos
         
@@ -555,7 +555,7 @@ class ecc(design.design):
                                 vector(self.xor_2.width+2*drc["metal2_to_metal2"], self.global_yoffset-drc["minwidth_metal1"]/2)-\
                                 vector(self.xor_2_label_positions["b_0_0"][0],0)
             else:
-                pinv_position = vector(x_syndrome_position+self.xor_2.width+2*drc["metal2_to_metal2"], self.global_yoffset-drc["minwidth_metal1"]/2)
+                pinv_position = vector(x_syndrome_position+self.xor_2.width+3*drc["metal2_to_metal2"], self.global_yoffset-drc["minwidth_metal1"]/2)
     
             #calculate input and output offsets
             a_pos, z_pos = self.get_pinv_pin_pos()
@@ -1097,7 +1097,7 @@ class ecc(design.design):
         m3m = drc["metal3_to_metal3"]
         m3min = drc["minwidth_metal3"]
         m3_extend_via2 = drc["metal3_extend_via2"]
-        required_m2m = 2*(m2m+m2min)
+        required_m2m = (m2m+m2min)
         i = 0
         bend = False
         #sort connections

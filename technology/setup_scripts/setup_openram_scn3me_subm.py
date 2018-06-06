@@ -19,14 +19,20 @@ os.environ["MGC_TMPDIR"] = "/tmp"
 
 ###########################
 # OpenRAM Paths
-OPENRAM_TECH=os.path.abspath(os.environ.get("OPENRAM_TECH"))
-DRCLVS_HOME=OPENRAM_TECH+"/scn3me_subm/tech"
-os.environ["DRCLVS_HOME"] = DRCLVS_HOME
-# You can override the spice model diretory in the environment
+
+    
 try:
-    SPICE_MODEL_DIR = os.path.abspath(os.environ.get("SPICE_MODEL_DIR"))
+    DRCLVS_HOME = os.path.abspath(os.environ.get("DRCLVS_HOME"))
 except:
-    os.environ["SPICE_MODEL_DIR"] = "/mada/software/techfiles/scn3me_subm"
+    OPENRAM_TECH=os.path.abspath(os.environ.get("OPENRAM_TECH"))
+    DRCLVS_HOME=OPENRAM_TECH+"/scn3me_subm/tech"
+os.environ["DRCLVS_HOME"] = DRCLVS_HOME
+
+# try:
+#     SPICE_MODEL_DIR = os.path.abspath(os.environ.get("SPICE_MODEL_DIR"))
+# except:
+OPENRAM_TECH=os.path.abspath(os.environ.get("OPENRAM_TECH"))
+os.environ["SPICE_MODEL_DIR"] = "{0}/{1}/models".format(OPENRAM_TECH, TECHNOLOGY)
 
 ##########################
 # Paths required for OPENRAM to function

@@ -6,26 +6,22 @@ check that these files are right.
 """
 
 import unittest
-from testutils import header
-import sys,os
+from testutils import header,openram_test
+import sys,os,re,shutil
 sys.path.append(os.path.join(sys.path[0],".."))
 import globals
+from globals import OPTS
 import debug
-import os
-import re
-import shutil
 
-OPTS = globals.get_opts()
-
-class openram_test(unittest.TestCase):
+class openram_test(openram_test):
 
     def runTest(self):
         globals.init_openram("config_20_{0}".format(OPTS.tech_name))
-
+        
         debug.info(1, "Testing top-level openram.py with 2-bit, 16 word SRAM.")
         out_file = "testsram"
-          # make a temp directory for output
-        out_path = OPTS.openram_temp + out_file
+        # make a temp directory for output
+        out_path = "/tmp/testsram_{0}".format(OPTS.tech_name)
 
         # make sure we start without the files existing
         if os.path.exists(out_path):
@@ -56,10 +52,15 @@ class openram_test(unittest.TestCase):
         os.system(cmd)
         
         # assert an error until we actually check a resul
-        for extension in ["gds", "v", "lef", "lib", "sp"]:
+        for extension in ["gds", "v", "lef", "sp"]:
             filename = "{0}/{1}.{2}".format(out_path,out_file,extension)
             debug.info(1,"Checking for file: " + filename)
             self.assertEqual(os.path.exists(filename),True)
+
+        # Make sure there is any .lib file
+        import glob
+        files = glob.glob('{0}/*.lib'.format(out_path))
+        self.assertTrue(len(files)>0)
 
         # grep any errors from the output
         output = open("{0}/output.log".format(out_path),"r").read()
@@ -71,9 +72,12 @@ class openram_test(unittest.TestCase):
             shutil.rmtree(out_path, ignore_errors=True)
         self.assertEqual(os.path.exists(out_path),False)
 
-        globals.end_openram()        
+        # The default was on, so disable it.
+        OPTS.check_lvsdrc=False
+        globals.end_openram()
+        OPTS.check_lvsdrc=True        
 
-# instantiate a copdsay of the class to actually run the test
+# instantiate a copy of the class to actually run the test
 if __name__ == "__main__":
     (OPTS, args) = globals.parse_args()
     del sys.argv[1:]

@@ -3,12 +3,12 @@ from tech import drc, spice
 import debug
 import design
 from math import log,sqrt,ceil
-from contact import contact
+import contact
 from bank import bank
 import datetime
 import getpass
 from vector import vector
-from globals import OPTS
+from globals import OPTS, print_time
 
     
 class sram(design.design):
@@ -19,18 +19,18 @@ class sram(design.design):
 
     def __init__(self, word_size, num_words, num_banks, name):
 
-        c = reload(__import__(OPTS.config.control_logic))
-        self.mod_control_logic = getattr(c, OPTS.config.control_logic)
+        c = reload(__import__(OPTS.control_logic))
+        self.mod_control_logic = getattr(c, OPTS.control_logic)
         
-        c = reload(__import__(OPTS.config.ms_flop_array))
-        self.mod_ms_flop_array = getattr(c, OPTS.config.ms_flop_array)
+        c = reload(__import__(OPTS.ms_flop_array))
+        self.mod_ms_flop_array = getattr(c, OPTS.ms_flop_array)
         
-        c = reload(__import__(OPTS.config.bitcell))
-        self.mod_bitcell = getattr(c, OPTS.config.bitcell)
+        c = reload(__import__(OPTS.bitcell))
+        self.mod_bitcell = getattr(c, OPTS.bitcell)
         self.bitcell = self.mod_bitcell()
 
-        c = reload(__import__(OPTS.config.ms_flop))
-        self.mod_ms_flop = getattr(c, OPTS.config.ms_flop)
+        c = reload(__import__(OPTS.ms_flop))
+        self.mod_ms_flop = getattr(c, OPTS.ms_flop)
         self.ms_flop = self.mod_ms_flop()
         
 
@@ -45,29 +45,21 @@ class sram(design.design):
 
         debug.info(2, "create sram of size {0} with {1} num of words".format(self.word_size, 
                                                                              self.num_words))
+        start_time = datetime.datetime.now()
 
         design.design.__init__(self, name)
 
-        # These aren't for instantiating, but we use them to get the dimensions
-        self.poly_contact = contact(layer_stack=("poly", "contact", "metal1"))
-        self.m1m2_via = contact(layer_stack=("metal1", "via1", "metal2"))
-        self.m2m3_via = contact(layer_stack=("metal2", "via2", "metal3"))
-
         # For different layer width vias
-        self.m2m3_offset_fix = vector(0,0.5*(drc["minwidth_metal3"]-drc["minwidth_metal2"]))
+        self.m2m3_offset_fix = vector(0,0.5*(self.m3_width-self.m2_width))
         
-        self.m1_width = drc["minwidth_metal1"]        
-        self.m2_width = drc["minwidth_metal2"]
-        self.m3_width = drc["minwidth_metal3"]        
-
         # M1/M2 routing pitch is based on contacted pitch of the biggest layer
-        self.m1_pitch = max(self.m1m2_via.width,self.m1m2_via.height) + max(drc["metal1_to_metal1"],drc["metal2_to_metal2"])
-        self.m2_pitch = max(self.m2m3_via.width,self.m2m3_via.height) + max(drc["metal2_to_metal2"],drc["metal3_to_metal3"])
-        self.m3_pitch = max(self.m2m3_via.width,self.m2m3_via.height) + max(drc["metal2_to_metal2"],drc["metal3_to_metal3"])
+        self.m1_pitch = max(contact.m1m2.width,contact.m1m2.height) + max(self.m1_space,self.m2_space)
+        self.m2_pitch = max(contact.m2m3.width,contact.m2m3.height) + max(self.m2_space,self.m3_space)
+        self.m3_pitch = max(contact.m2m3.width,contact.m2m3.height) + max(self.m2_space,self.m3_space)
         
 
         self.control_size = 6
-        self.bank_to_bus_distance = 5*drc["minwidth_metal3"]
+        self.bank_to_bus_distance = 5*self.m3_width
         
         self.compute_sizes()
         self.add_pins()
@@ -76,7 +68,16 @@ class sram(design.design):
         # Can remove the following, but it helps for debug!
         self.add_lvs_correspondence_points()
         
-        self.DRC_LVS()
+        self.offset_all_coordinates()
+        sizes = self.find_highest_coords()
+        self.width = sizes[0]
+        self.height = sizes[1]
+        
+        self.DRC_LVS(final_verification=True)
+
+        if not OPTS.is_unit_test:
+            print_time("SRAM creation", datetime.datetime.now(), start_time)
+
 
     def compute_sizes(self):
         """  Computes the organization of the memory using bitcell size by trying to make it square."""
@@ -108,6 +109,7 @@ class sram(design.design):
         self.bank_addr_size = self.col_addr_size + self.row_addr_size
         self.addr_size = self.bank_addr_size + int(log(self.num_banks, 2))
         
+        debug.info(1,"Words per row: {}".format(self.words_per_row))
 
     def estimate_words_per_row(self,tentative_num_cols, word_size):
         """This provides a heuristic rounded estimate for the number of words
@@ -139,15 +141,17 @@ class sram(design.design):
         """ Add pins for entire SRAM. """
 
         for i in range(self.word_size):
-            self.add_pin("DATA[{0}]".format(i))
+            self.add_pin("DATA[{0}]".format(i),"INOUT")
         for i in range(self.addr_size):
-            self.add_pin("ADDR[{0}]".format(i))
+            self.add_pin("ADDR[{0}]".format(i),"INPUT")
 
+        # These are used to create the physical pins too
         self.control_logic_inputs=["CSb", "WEb",  "OEb", "clk"]
         self.control_logic_outputs=["s_en", "w_en", "tri_en", "tri_en_bar", "clk_bar", "clk_buf"]
         
-        for pin in self.control_logic_inputs+["vdd","gnd"]:
-            self.add_pin(pin)
+        self.add_pin_list(self.control_logic_inputs,"INPUT")
+        self.add_pin("vdd","POWER")
+        self.add_pin("gnd","GROUND")
 
     def create_layout(self):
         """ Layout creation """
@@ -214,12 +218,12 @@ class sram(design.design):
                     break
             rail_pos = vector(pin_pos.x,self.horz_control_bus_positions[n].y)
             self.add_path("metal2",[pin_pos,rail_pos])
-            self.add_center_via(("metal1","via1","metal2"),rail_pos)
+            self.add_via_center(("metal1","via1","metal2"),rail_pos)
         
         # connect the control logic cross bar
         for n in self.control_logic_outputs:
             cross_pos = vector(self.vert_control_bus_positions[n].x,self.horz_control_bus_positions[n].y)
-            self.add_center_via(("metal1","via1","metal2"),cross_pos)
+            self.add_via_center(("metal1","via1","metal2"),cross_pos)
 
         # connect the bank select signals to the vertical bus
         for i in range(self.num_banks):
@@ -227,9 +231,8 @@ class sram(design.design):
             pin_pos = pin.rc() if i==0 else pin.lc()
             rail_pos = vector(self.vert_control_bus_positions["bank_sel[{}]".format(i)].x,pin_pos.y)
             self.add_path("metal3",[pin_pos,rail_pos])
-            self.add_center_via(("metal2","via2","metal3"),rail_pos)
+            self.add_via_center(("metal2","via2","metal3"),rail_pos)
 
-        # connect the horizontal control bus to the vertical bus
         
             
     def route_four_banks(self):
@@ -243,13 +246,13 @@ class sram(design.design):
                 pin_pos = self.bank_inst[i].get_pin(n).bc()
                 rail_pos = vector(pin_pos.x,self.data_bus_positions[n].y)
                 self.add_path("metal2",[pin_pos,rail_pos])
-                self.add_center_via(("metal2","via2","metal3"),rail_pos)
+                self.add_via_center(("metal2","via2","metal3"),rail_pos)
 
             for i in [2,3]:
                 pin_pos = self.bank_inst[i].get_pin(n).uc()
                 rail_pos = vector(pin_pos.x,self.data_bus_positions[n].y)
                 self.add_path("metal2",[pin_pos,rail_pos])
-                self.add_center_via(("metal2","via2","metal3"),rail_pos)
+                self.add_via_center(("metal2","via2","metal3"),rail_pos)
                 
         # route msb address bits
         # route 2:4 decoder
@@ -268,7 +271,7 @@ class sram(design.design):
                 pin1_pos = self.bank_inst[bank_id+1].get_pin(n).lc()
                 rail_pos = vector(self.vert_control_bus_positions[n].x,pin0_pos.y)
                 self.add_path("metal3",[pin0_pos,pin1_pos])
-                self.add_center_via(("metal2","via2","metal3"),rail_pos)
+                self.add_via_center(("metal2","via2","metal3"),rail_pos)
             
 
         self.route_bank_supply_rails(bottom_banks=[2,3])
@@ -476,7 +479,7 @@ class sram(design.design):
                 pin_pos = self.bank_inst[i].get_pin(n).uc()
                 rail_pos = vector(pin_pos.x,self.data_bus_positions[n].y)
                 self.add_path("metal2",[pin_pos,rail_pos])
-                self.add_center_via(("metal2","via2","metal3"),rail_pos)
+                self.add_via_center(("metal2","via2","metal3"),rail_pos)
 
         self.route_single_msb_address()
 
@@ -491,7 +494,7 @@ class sram(design.design):
             pin1_pos = self.bank_inst[1].get_pin(n).lc()
             rail_pos = vector(self.vert_control_bus_positions[n].x,pin0_pos.y)
             self.add_path("metal3",[pin0_pos,pin1_pos])
-            self.add_center_via(("metal2","via2","metal3"),rail_pos)
+            self.add_via_center(("metal2","via2","metal3"),rail_pos)
 
 
         self.route_bank_supply_rails(bottom_banks=[0,1])
@@ -511,7 +514,7 @@ class sram(design.design):
                     break
             rail_pos = vector(self.vert_control_bus_positions[self.msb_bank_sel_addr[i]].x,msb_pin_pos.y)
             self.add_path("metal3",[msb_pin_pos,rail_pos])
-            self.add_center_via(("metal2","via2","metal3"),rail_pos)
+            self.add_via_center(("metal2","via2","metal3"),rail_pos)
         
         # Connect clk
         clk_pin = self.msb_address_inst.get_pin("clk")
@@ -526,7 +529,7 @@ class sram(design.design):
             msb_pin_pos = msb_pin.lc()
             rail_pos = vector(self.vert_control_bus_positions["bank_sel[{}]".format(i)].x,msb_pin_pos.y)
             self.add_path("metal1",[msb_pin_pos,rail_pos])
-            self.add_center_via(("metal1","via1","metal2"),rail_pos)
+            self.add_via_center(("metal1","via1","metal2"),rail_pos)
 
         # connect MSB flop outputs to the bank decoder inputs
         msb_pin = self.msb_address_inst.get_pin("dout[0]")
@@ -536,8 +539,8 @@ class sram(design.design):
         out_pos = msb_pin_pos + vector(1*self.m2_pitch,0) # route out to the right
         up_pos = vector(out_pos.x,in_pos.y) # and route up to the decoer
         self.add_wire(("metal1","via1","metal2"),[msb_pin_pos,out_pos,up_pos,in_pos])
-        self.add_center_via(("metal1","via1","metal2"),in_pos)
-        self.add_center_via(("metal1","via1","metal2"),msb_pin_pos,rotate=90)
+        self.add_via_center(("metal1","via1","metal2"),in_pos)
+        self.add_via_center(("metal1","via1","metal2"),msb_pin_pos,rotate=90)
             
         msb_pin = self.msb_address_inst.get_pin("dout[1]")
         msb_pin_pos = msb_pin.rc()
@@ -546,8 +549,8 @@ class sram(design.design):
         out_pos = msb_pin_pos + vector(2*self.m2_pitch,0) # route out to the right
         up_pos = vector(out_pos.x,in_pos.y) # and route up to the decoer
         self.add_wire(("metal1","via1","metal2"),[msb_pin_pos,out_pos,up_pos,in_pos])
-        self.add_center_via(("metal1","via1","metal2"),in_pos)
-        self.add_center_via(("metal1","via1","metal2"),msb_pin_pos,rotate=90)
+        self.add_via_center(("metal1","via1","metal2"),in_pos)
+        self.add_via_center(("metal1","via1","metal2"),msb_pin_pos,rotate=90)
         
         # Route the right-most vdd/gnd of the right upper bank to the top of the decoder
         vdd_pins = self.bank_inst[1].get_pins("vdd")
@@ -598,9 +601,9 @@ class sram(design.design):
             down_pos = vdd_pos - vector(0,self.m1_pitch)
             rail_pos = vector(vdd_pos.x,self.horz_control_bus_positions["vdd"].y)
             self.add_path("metal1",[vdd_pos,down_pos])            
-            self.add_center_via(("metal1","via1","metal2"),down_pos,rotate=90)   
+            self.add_via_center(("metal1","via1","metal2"),down_pos,rotate=90)   
             self.add_path("metal2",[down_pos,rail_pos])
-            self.add_center_via(("metal1","via1","metal2"),rail_pos)        
+            self.add_via_center(("metal1","via1","metal2"),rail_pos)        
         # gnd pins go right to the rail
         gnd_pins = self.msb_address_inst.get_pins("gnd")
         for gnd_pin in gnd_pins:
@@ -608,7 +611,7 @@ class sram(design.design):
             gnd_pos = gnd_pin.rc()
             rail_pos = vector(bank_gnd_pos.x+bank_gnd_pin.width(),gnd_pos.y)
             self.add_path("metal1",[gnd_pos,rail_pos])
-            self.add_center_via(("metal1","via1","metal2"),gnd_pos,rotate=90)
+            self.add_via_center(("metal1","via1","metal2"),gnd_pos,rotate=90)
             self.add_via(("metal1","via1","metal2"),rail_pos- vector(0,0.5*self.m1_width),rotate=90,size=[1,3])            
         
     def route_single_msb_address(self):
@@ -622,9 +625,9 @@ class sram(design.design):
             down_pos = vdd_pos - vector(0,self.m1_pitch)
             rail_pos = vector(vdd_pos.x,self.horz_control_bus_positions["vdd"].y)
             self.add_path("metal1",[vdd_pos,down_pos])            
-            self.add_center_via(("metal1","via1","metal2"),down_pos,rotate=90)   
+            self.add_via_center(("metal1","via1","metal2"),down_pos,rotate=90)   
             self.add_path("metal2",[down_pos,rail_pos])
-            self.add_center_via(("metal1","via1","metal2"),rail_pos)
+            self.add_via_center(("metal1","via1","metal2"),rail_pos)
         
         gnd_pins = self.msb_address_inst.get_pins("gnd")
         # Only add the ground connection to the lowest metal2 rail in the flop array
@@ -637,7 +640,7 @@ class sram(design.design):
                 gnd_pos = gnd_pin.ur()
         rail_pos = vector(gnd_pos.x,self.horz_control_bus_positions["gnd"].y)
         self.add_path("metal2",[gnd_pos,rail_pos])
-        self.add_center_via(("metal1","via1","metal2"),rail_pos)            
+        self.add_via_center(("metal1","via1","metal2"),rail_pos)            
         
         # connect the MSB flop to the address input bus 
         msb_pins = self.msb_address_inst.get_pins("din[0]")
@@ -647,27 +650,27 @@ class sram(design.design):
                 break
         rail_pos = vector(self.vert_control_bus_positions[self.msb_bank_sel_addr].x,msb_pin_pos.y)
         self.add_path("metal3",[msb_pin_pos,rail_pos])
-        self.add_center_via(("metal2","via2","metal3"),rail_pos)
+        self.add_via_center(("metal2","via2","metal3"),rail_pos)
 
         # Connect the output bar to select 0
         msb_out_pin = self.msb_address_inst.get_pin("dout_bar[0]")
         msb_out_pos = msb_out_pin.rc()
-        out_extend_right_pos = msb_out_pos + vector(self.m2_pitch,0)
+        out_extend_right_pos = msb_out_pos + vector(2*self.m2_pitch,0)
         out_extend_up_pos = out_extend_right_pos + vector(0,self.m2_width)
         rail_pos = vector(self.vert_control_bus_positions["bank_sel[0]"].x,out_extend_up_pos.y)
         self.add_path("metal2",[msb_out_pos,out_extend_right_pos,out_extend_up_pos])
         self.add_wire(("metal3","via2","metal2"),[out_extend_right_pos,out_extend_up_pos,rail_pos])
-        self.add_center_via(("metal2","via2","metal3"),rail_pos)
+        self.add_via_center(("metal2","via2","metal3"),rail_pos)
         
         # Connect the output to select 1
         msb_out_pin = self.msb_address_inst.get_pin("dout[0]")
         msb_out_pos = msb_out_pin.rc()
-        out_extend_right_pos = msb_out_pos + vector(self.m2_pitch,0)
+        out_extend_right_pos = msb_out_pos + vector(2*self.m2_pitch,0)
         out_extend_down_pos = out_extend_right_pos - vector(0,2*self.m1_pitch)
         rail_pos = vector(self.vert_control_bus_positions["bank_sel[1]"].x,out_extend_down_pos.y)
         self.add_path("metal2",[msb_out_pos,out_extend_right_pos,out_extend_down_pos])
         self.add_wire(("metal3","via2","metal2"),[out_extend_right_pos,out_extend_down_pos,rail_pos])
-        self.add_center_via(("metal2","via2","metal3"),rail_pos)
+        self.add_via_center(("metal2","via2","metal3"),rail_pos)
         
         # Connect clk
         clk_pin = self.msb_address_inst.get_pin("clk")
@@ -762,7 +765,7 @@ class sram(design.design):
 
         self.power_rail_width = self.bank.vdd_rail_width
         # Leave some extra space for the pitch
-        self.power_rail_pitch = self.bank.vdd_rail_width + 2*drc["metal3_to_metal3"]
+        self.power_rail_pitch = self.bank.vdd_rail_width + 2*self.m3_space
 
 
 
@@ -859,6 +862,10 @@ class sram(design.design):
 
 
     def add_lvs_correspondence_points(self):
+        """ This adds some points for easier debugging if LVS goes wrong. 
+        These should probably be turned off by default though, since extraction
+        will show these as ports in the extracted netlist.
+        """
         if self.num_banks==1: return
         
         for n in self.control_bus_names:
@@ -881,9 +888,9 @@ class sram(design.design):
         
         # Control logic is placed to the left of the blank even with the
         # decoder bottom. A small gap is in the x-dimension.
-        control_gap = 2*drc["minwidth_metal3"]
+        control_gap = 2*self.m3_width
         pos = vector(-control_gap,
-                     self.bank.row_decoder_inst.by() + 2*drc["minwidth_metal3"])
+                     self.bank.row_decoder_inst.by() + 2*self.m3_width)
         self.add_control_logic(position=pos,
                                rotate=90)
 
@@ -987,7 +994,13 @@ class sram(design.design):
         ############################################################
         sp = open(sp_name, 'w')
 
+        sp.write("**************************************************\n")
         sp.write("* OpenRAM generated memory.\n")
+        sp.write("* Words: {}\n".format(self.num_words))
+        sp.write("* Data bits: {}\n".format(self.word_size))
+        sp.write("* Banks: {}\n".format(self.num_banks))
+        sp.write("* Column mux: {}:1\n".format(self.words_per_row))
+        sp.write("**************************************************\n")        
         # This causes unit test mismatch
         # sp.write("* Created: {0}\n".format(datetime.datetime.now()))
         # sp.write("* User: {0}\n".format(getpass.getuser()))
@@ -1001,3 +1014,59 @@ class sram(design.design):
     def analytical_delay(self,slew,load):
         """ LH and HL are the same in analytical model. """
         return self.bank.analytical_delay(slew,load)
+
+    def save_output(self):
+        """ Save all the output files while reporting time to do it as well. """
+
+        # Save the spice file
+        start_time = datetime.datetime.now()
+        spname = OPTS.output_path + self.name + ".sp"
+        print("SP: Writing to {0}".format(spname))
+        self.sp_write(spname)
+        print_time("Spice writing", datetime.datetime.now(), start_time)
+
+        # Save the extracted spice file
+        if OPTS.use_pex:
+            start_time = datetime.datetime.now()
+            # Output the extracted design if requested
+            sp_file = OPTS.output_path + "temp_pex.sp"
+            verify.run_pex(self.name, gdsname, spname, output=sp_file)
+            print_time("Extraction", datetime.datetime.now(), start_time)
+        else:
+            # Use generated spice file for characterization
+            sp_file = spname
+        
+        # Characterize the design
+        start_time = datetime.datetime.now()        
+        from characterizer import lib
+        print("LIB: Characterizing... ")
+        if OPTS.analytical_delay:
+            print("Using analytical delay models (no characterization)")
+        else:
+            if OPTS.spice_name!="":
+                print("Performing simulation-based characterization with {}".format(OPTS.spice_name))
+            if OPTS.trim_netlist:
+                print("Trimming netlist to speed up characterization.")
+        lib.lib(out_dir=OPTS.output_path, sram=self, sp_file=sp_file)
+        print_time("Characterization", datetime.datetime.now(), start_time)
+
+        # Write the layout
+        start_time = datetime.datetime.now()
+        gdsname = OPTS.output_path + self.name + ".gds"
+        print("GDS: Writing to {0}".format(gdsname))
+        self.gds_write(gdsname)
+        print_time("GDS", datetime.datetime.now(), start_time)
+
+        # Create a LEF physical model
+        start_time = datetime.datetime.now()
+        lefname = OPTS.output_path + self.name + ".lef"
+        print("LEF: Writing to {0}".format(lefname))
+        self.lef_write(lefname)
+        print_time("LEF", datetime.datetime.now(), start_time)
+
+        # Write a verilog model
+        start_time = datetime.datetime.now()
+        vname = OPTS.output_path + self.name + ".v"
+        print("Verilog: Writing to {0}".format(vname))
+        self.verilog_write(vname)
+        print_time("Verilog", datetime.datetime.now(), start_time)

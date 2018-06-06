@@ -23,16 +23,19 @@ the tests on your contributions before they will be accepted.
 # Pull Request Process
 
 1. One time, create a GitHub account at http://github.com
+
 2. Create a fork of the OpenRAM project on the github web page:
    https://github.com/mguthaus/OpenRAM
    It is on the upper right and says "Fork": This will make your own
    OpenRAM repository on GitHub in your account.
+
 3. Clone your repository (or use an existing cloned copy if you've
    already done this once):
 ```
   git clone https://github.com/<youruser>/OpenRAM.git
   cd OpenRAM
 ```
+
 4. Set up a new upstream that points to MY OpenRAM repository that you
    forked (only first time):
 ```
@@ -49,7 +52,18 @@ the tests on your contributions before they will be accepted.
 ```
    if you previously added the one with the git@github that required
    authentication.
-5. Make your own branch. The number one rule is to put each piece of
+
+5. Start with dev:
+```
+ git checkout dev
+```
+  "dev" is the name of the branch that 
+  is the development version. You should submit all contributions as changes
+  to the dev branch. "master" is the name of the branch that is the release version of the
+  code (in your fork of the repository). You can check out the released
+  code with "git checkout master”. 
+
+6. Make your own branch from dev. The number one rule is to put each piece of
    work on its own branch:
 ```
   git checkout -b useful-branch-name
@@ -59,55 +73,55 @@ the tests on your contributions before they will be accepted.
   git branch useful-branch-name
   git checkout useful-branch-name
 ```
-  "master" is the name of the branch that is the release version of the
-  code (in your fork of the repository). You can check out the released
-  code with "git checkout master" or go back to your ranch with
-  "gitcheckout useful-branch-name".
-6. Edit your code and make commits like normal:
+
+7. Edit your code and make commits:
 ```
-  git add <new files>
   <edit files>
+  git add <new files>
   git commit -m "Useful comment" <files changed>
 ```
    OR (sparingly, to commit all changes):
 ```
   git status
-  <check that all the changed files are correct and should be commited>
+  <check that all the changed files are correct and should be committed>
   git commit -a -m "Useful comment"
 ```
    Run the unit tests entirely. Fix all bugs.
-7. After you are done (or while you are editing and you see changes in
-   MY master branch) make sure you have the most recent from MY master
-   and merge any changes. Pull the updated copy from MY master branch in
+
+8. After you are done (or while you are editing and you see changes in
+   MY dev branch) make sure you have the most recent from MY dev
+   and merge any changes. Pull the updated copy from MY master dev in
    MY repository:
 ```
- git pull upstream master
+ git pull upstream dev
 ```
-  This is important because we may have had other updates that conflict
-  with your changes and you must resolve them with current state of
-  master (the released, working code). You may have to merge changes if
-  they overlap your changes, so do this often to avoid the problem. You
-  now need to push this to the master of YOUR forked repository as well:
+
+9. Frequently rebase your branch to keep track of current changes in dev. 
 ```
- git push origin master
+ git fetch upstream
+ git rebase origin/dev
 ```
-  if you are on your master branch. Otherwise, just git push.
-8. Push your branch to YOUR repository:
+
+10. After a final rebase and your code is working, push your branch to YOUR repository:
 ```
  git push -u origin useful-branch-name
 ```
    Remember origin is your copy on github and useful-branch-name is the
    branch that you made to contain all your changes.
    The -u flag links this branch with the remote one, so that in the
-   future, you can simply type git push origin.
-9. When you are done, go to GitHub and you will see a button to notify
+   future, you can simply type git push origin. Do not rebase after you push 
+   the branch!
+
+11. When you are done, go to GitHub and you will see a button to notify
    me.  Press the button and it will notify me of your pushed branch.
    This will have you fill in a form for the contribution that gets sent
    to me.
-10. I will review the request and may have you fix stuff if the tests
-    don't pass, you didn't merge all my changes in master from other
+
+12. I will review the request and may have you fix stuff if the tests
+    don't pass, you didn't merge all my changes in dev from other
     contributions, or your style of code is bad.
-11. Go back to step 3 for your next contribution. Remember, you can
+
+13. Go back to step 3 for your next contribution. Remember, you can
     push/pull work to your repository all the time and can pull from my
-    master as well. Make sure to add large features so that You don't have
+    dev as well. Make sure to add large features so that You don't have
     to add lots of pull requests.

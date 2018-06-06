@@ -1,8 +1,6 @@
-import globals
 import re
 import debug
-
-OPTS = globals.get_opts()
+from globals import OPTS
 
         
 def relative_compare(value1,value2,error_tolerance=0.001):
@@ -12,7 +10,7 @@ def relative_compare(value1,value2,error_tolerance=0.001):
 
 def parse_output(filename, key):
     """Parses a hspice output.lis file for a key value"""
-    if OPTS.spice_version == "xa" :
+    if OPTS.spice_name == "xa" :
         # customsim has a different output file name
         full_filename="{0}xa.meas".format(OPTS.openram_temp)
     else:
@@ -28,8 +26,8 @@ def parse_output(filename, key):
     val = re.search(r"{0}\s*=\s*(-?\d+.?\d*[e]?[-+]?[0-9]*\S*)\s+.*".format(key), contents)
     
     if val != None:
-        debug.info(3, "Key = " + key + " Val = " + val.group(1))
-        return val.group(1)
+        debug.info(4, "Key = " + key + " Val = " + val.group(1))
+        return convert_to_float(val.group(1))
     else:
         return "Failed"
     

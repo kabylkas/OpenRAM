@@ -4,39 +4,37 @@ Run a regresion test on various srams
 """
 
 import unittest
-from testutils import header,isclose
+from testutils import header,openram_test
 import sys,os
 sys.path.append(os.path.join(sys.path[0],".."))
 import globals
+from globals import OPTS
 import debug
-import calibre
 
-OPTS = globals.get_opts()
-
-#@unittest.skip("SKIPPING 21_timing_sram_test")
-
-
-class timing_sram_test(unittest.TestCase):
+class timing_sram_test(openram_test):
 
     def runTest(self):
         globals.init_openram("config_20_{0}".format(OPTS.tech_name))
-        # we will manually run lvs/drc
         OPTS.check_lvsdrc = False
-        OPTS.spice_version="hspice"
+        OPTS.spice_name="hspice"
         OPTS.analytical_delay = False
-        globals.set_spice()
         
-        import sram
+        # This is a hack to reload the characterizer __init__ with the spice version
+        import characterizer
+        reload(characterizer)
+        from characterizer import delay
+        if not OPTS.spice_exe:
+            debug.error("Could not find {} simulator.".format(OPTS.spice_name),-1)
 
+        import sram
+        import tech
         debug.info(1, "Testing timing for sample 1bit, 16words SRAM with 1 bank")
-        s = sram.sram(word_size=OPTS.config.word_size,
-                      num_words=OPTS.config.num_words,
-                      num_banks=OPTS.config.num_banks,
+        s = sram.sram(word_size=OPTS.word_size,
+                      num_words=OPTS.num_words,
+                      num_banks=OPTS.num_banks,
                       name="sram1")
 
         OPTS.check_lvsdrc = True
-
-        import delay
 
         tempspice = OPTS.openram_temp + "temp.sp"
         s.sp_write(tempspice)
@@ -45,32 +43,35 @@ class timing_sram_test(unittest.TestCase):
         probe_data = s.word_size - 1
         debug.info(1, "Probe address {0} probe data {1}".format(probe_address, probe_data))
 
-        d = delay.delay(s,tempspice)
+        corner = (OPTS.process_corners[0], OPTS.supply_voltages[0], OPTS.temperatures[0])
+        d = delay.delay(s,tempspice,corner)
         import tech
-        loads = [tech.spice["FF_in_cap"]*4]
+        loads = [tech.spice["msflop_in_cap"]*4]
         slews = [tech.spice["rise_time"]*2]
         data = d.analyze(probe_address, probe_data,slews,loads)
-
+        #print data
         if OPTS.tech_name == "freepdk45":
-            golden_data = {'read1_power': 0.025833000000000002,
-                           'read0_power': 0.026039,
-                           'write0_power': 0.024105,
-                           'delay1': [0.047506],
-                           'delay0': [0.13799999999999998],
-                           'min_period': 0.322,
-                           'write1_power': 0.024214,
-                           'slew0': [0.026966],
-                           'slew1': [0.019338]}
+            golden_data = {'leakage_power': 0.0006964536000000001,
+                           'delay_lh': [0.0573055],
+                           'read0_power': [0.0337812],
+                           'read1_power': [0.032946500000000004],
+                           'write1_power': [0.0361529],
+                           'write0_power': [0.026179099999999997],
+                           'slew_hl': [0.0285185],
+                           'min_period': 0.205,
+                           'delay_hl': [0.070554],
+                           'slew_lh': [0.0190073]}
         elif OPTS.tech_name == "scn3me_subm":
-            golden_data = {'read1_power': 3.1765,
-                           'read0_power': 3.1929,
-                           'write0_power': 2.874,
-                           'delay1': [0.8900045999999999],
-                           'delay0': [1.9975000000000003],
-                           'min_period': 5.781,
-                           'write1_power': 2.6611,
-                           'slew0': [1.2993000000000001],
-                           'slew1': [0.9903856]}
+            golden_data = {'leakage_power': 0.0004004581,
+                           'delay_lh': [0.6538954],
+                           'read0_power': [9.7622],
+                           'read1_power': [9.589],
+                           'write1_power': [10.2578],
+                           'write0_power': [6.928400000000001],
+                           'slew_hl': [0.8321625],
+                           'min_period': 2.344,
+                           'delay_hl': [0.9019090999999999],
+                           'slew_lh': [0.5896232]}
         else:
             self.assertTrue(False) # other techs fail
         # Check if no too many or too few results
@@ -79,18 +80,15 @@ class timing_sram_test(unittest.TestCase):
         for k in data.keys():
             if type(data[k])==list:
                 for i in range(len(data[k])):
-                    self.assertTrue(isclose(data[k][i],golden_data[k][i]))
+                    self.isclose(data[k][i],golden_data[k][i],0.15)
             else:
-                self.assertTrue(isclose(data[k],golden_data[k]))
+                self.isclose(data[k],golden_data[k],0.15)
 
                 
         # reset these options
         OPTS.check_lvsdrc = True
-        OPTS.spice_version="hspice"
         OPTS.analytical_delay = True
-        globals.set_spice()
-
-        os.remove(tempspice)
+        reload(characterizer)
 
         globals.end_openram()
         

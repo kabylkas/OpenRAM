@@ -4,21 +4,20 @@ Run a regression test on an extracted SRAM to ensure functionality.
 """
 
 import unittest
-from testutils import header
+from testutils import header,openram_test
 import sys,os
 sys.path.append(os.path.join(sys.path[0],".."))
 import globals
+from globals import OPTS
 import debug
-import calibre
-
-OPTS = globals.get_opts()
-
 
 @unittest.skip("SKIPPING 22_sram_func_test")
-class sram_func_test(unittest.TestCase):
+class sram_func_test(openram_test):
 
     def runTest(self):
         globals.init_openram("config_20_{0}".format(OPTS.tech_name))
+        global verify
+        import verify
 
         self.func_test(bank_num=1)
         self.func_test(bank_num=2)
@@ -34,9 +33,9 @@ class sram_func_test(unittest.TestCase):
         debug.info(1, "Testing timing for sample 1bit, 16words SRAM with 1 bank")
         OPTS.check_lvsdrc = False
         OPTS.use_pex = True
-        s = sram.sram(word_size=OPTS.config.word_size,
-                      num_words=OPTS.config.num_words,
-                      num_banks=OPTS.config.num_banks,
+        s = sram.sram(word_size=OPTS.word_size,
+                      num_words=OPTS.num_words,
+                      num_banks=OPTS.num_banks,
                       name="test_sram1")
         OPTS.check_lvsdrc = True
         OPTS.use_pex = False
@@ -47,9 +46,9 @@ class sram_func_test(unittest.TestCase):
         s.sp_write(tempspice)
         s.gds_write(tempgds)
 
-        self.assertFalse(calibre.run_drc(s.name, tempgds))
-        self.assertFalse(calibre.run_lvs(s.name, tempgds, tempspice))
-        self.assertFalse(calibre.run_pex(s.name, tempgds,
+        self.assertFalse(verify.run_drc(s.name, tempgds))
+        self.assertFalse(verify.run_lvs(s.name, tempgds, tempspice))
+        self.assertFalse(verify.run_pex(s.name, tempgds,
                                          tempspice, output=OPTS.openram_temp + "temp_pex.sp"))
 
         import sp_file
@@ -65,7 +64,7 @@ class sram_func_test(unittest.TestCase):
 
         import os
 
-        if OPTS.spice_version == "hspice":
+        if OPTS.spice_name == "hspice":
             cmd = "hspice -mt 2 -i {0} > {1} ".format(
                 simulator_file, result_file)
         else:
@@ -146,7 +145,7 @@ class sram_func_test(unittest.TestCase):
             9.5 * tech.spice["clock_period"], 10 * tech.spice["clock_period"]))
         sim_file.write("\n")
 
-        if OPTS.spice_version == "hspice":
+        if OPTS.spice_name in ["hspice","xa"]:
             sim_file.write(".probe v(x*.*)\n")
             sim_file.write(".tran 0.1ns {0}ns\n".format(
                 10 * tech.spice["clock_period"]))

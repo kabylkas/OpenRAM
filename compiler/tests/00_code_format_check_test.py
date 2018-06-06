@@ -1,18 +1,13 @@
 #!/usr/bin/env python2.7
 
 import unittest
-from testutils import header
-import sys,os
+from testutils import header,openram_test
+import sys,os,re
 sys.path.append(os.path.join(sys.path[0],".."))
 import globals
 import debug
-import calibre
-import re
 
-#@unittest.skip("SKIPPING 00_format check test")
-
-
-class code_format_test(unittest.TestCase):
+class code_format_test(openram_test):
     "Run a test to check for tabs instead of spaces in the all source files."
 
     def runTest(self):
@@ -39,6 +34,8 @@ class code_format_test(unittest.TestCase):
             if re.search("globals.py$", code):
                 continue
             if re.search("openram.py$", code):
+                continue
+            if re.search("gen_stimulus.py$", code):
                 continue
             errors += check_print_output(code)
 

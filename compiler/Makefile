@@ -67,6 +67,10 @@ CHAR_TESTS = \
 23_lib_sram_prune_test.py \
 23_lib_sram_test.py
 
+# ECC
+ECC_TESTS = \
+31_ecc_test.py
+
 # Keep the model lib test here since it is fast
 # and doesn't need simulation.
 USAGE_TESTS = \
@@ -88,6 +92,9 @@ default all:
 $(ALL_FILES):
 	python ${TEST_DIR}/$@ -t freepdk45
 	python ${TEST_DIR}/$@ -t scn3me_subm
+
+ecc:
+	python ./tests/31_ecc_test.py -t scn3me_subm
 
 # Library tests
 lib:	${LIBRARY_TESTS}
@@ -113,3 +120,4 @@ usage: ${USAGE_TESTS}
 clean:
 	find . -name \*.pyc -exec rm {} \;
 	find . -name \*~ -exec rm {} \;
+	find . -name \temp -exec rm -r {} \;

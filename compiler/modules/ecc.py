@@ -27,8 +27,8 @@ class ecc(design.design):
         debug.info(1, "Creating {0}".format(self.name))
 
         #2 input xclusive or
-        c = reload(__import__(OPTS.config.xor_2))
-        self.mod_xor_2 = getattr(c, OPTS.config.xor_2)
+        c = reload(__import__(OPTS.xor_2))
+        self.mod_xor_2 = getattr(c, OPTS.xor_2)
         self.xor_2_pin_map = self.mod_xor_2.pin_map
         self.create_xor_2()
 
@@ -86,13 +86,11 @@ class ecc(design.design):
         self.add_mod(self.xor_2)
 
     def create_nand_2(self):
-        self.nand_2 = nand_2(nmos_width = 2*drc["minwidth_tx"])
+        self.nand_2 = pnand2()
         self.add_mod(self.nand_2)
 
     def create_pinv(self):
-        self.pinv = pinv(nmos_width=2*drc["minwidth_tx"],
-                         height=self.xor_2.height-drc["minwidth_metal1"],
-                         beta=tech.parameter["pinv_beta"])
+        self.pinv = pinv()
         self.add_mod(self.pinv)
 
     def setup_layout_constants(self):

@@ -94,7 +94,7 @@ $(ALL_FILES):
 	python ${TEST_DIR}/$@ -t scn3me_subm
 
 ecc:
-	python ./tests/31_ecc_test.py -t scn3me_subm
+	python ./tests/31_ecc_test.py -t scn3me_subm -v
 
 # Library tests
 lib:	${LIBRARY_TESTS}
